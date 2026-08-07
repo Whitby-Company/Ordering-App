@@ -15,14 +15,17 @@ db.pragma('journal_mode = WAL');
 db.exec(`
   CREATE TABLE IF NOT EXISTS customers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL UNIQUE
+    name TEXT NOT NULL UNIQUE,
+    active INTEGER NOT NULL DEFAULT 1
   );
 
   CREATE TABLE IF NOT EXISTS items (
-    id TEXT PRIMARY KEY,          -- SKU, e.g. 'NK-AM90-10'
+    id TEXT PRIMARY KEY,          -- SKU, e.g. 'ACL:NIBB4OZ'
     brand TEXT NOT NULL,
     name TEXT NOT NULL,
-    stock INTEGER NOT NULL DEFAULT 0
+    stock INTEGER NOT NULL DEFAULT 0,
+    price REAL NOT NULL DEFAULT 0,
+    active INTEGER NOT NULL DEFAULT 1
   );
 
   CREATE TABLE IF NOT EXISTS orders (
@@ -42,5 +45,22 @@ db.exec(`
     FOREIGN KEY (item_id) REFERENCES items(id)
   );
 `);
+
+// Migration: older deployments created these tables before the `price`
+// and `active` columns existed. CREATE TABLE IF NOT EXISTS above won't add
+// them to an existing table, so add them here if missing. Safe to run every
+// startup — it's a no-op once the columns exist. New items/customers default
+// to active=1 (visible) so nothing disappears from the app unexpectedly.
+const itemColumns = db.prepare("PRAGMA table_info(items)").all().map(c => c.name);
+if (!itemColumns.includes('price')) {
+  db.exec('ALTER TABLE items ADD COLUMN price REAL NOT NULL DEFAULT 0');
+}
+if (!itemColumns.includes('active')) {
+  db.exec('ALTER TABLE items ADD COLUMN active INTEGER NOT NULL DEFAULT 1');
+}
+const customerColumns = db.prepare("PRAGMA table_info(customers)").all().map(c => c.name);
+if (!customerColumns.includes('active')) {
+  db.exec('ALTER TABLE customers ADD COLUMN active INTEGER NOT NULL DEFAULT 1');
+}
 
 module.exports = db;

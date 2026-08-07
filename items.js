@@ -3,67 +3,89 @@ const db = require('../db');
 
 const router = express.Router();
 
-// GET /api/items — list all items (current live inventory)
-// Optional query params: ?brand=Nike  ?lowStockMax=5
+// GET /api/orders — list all orders, newest first, with line items nested
 router.get('/', (req, res) => {
-  const { brand, lowStockMax } = req.query;
-  let sql = 'SELECT id, brand, name, stock FROM items WHERE 1=1';
-  const params = [];
-
-  if (brand) {
-    sql += ' AND brand = ?';
-    params.push(brand);
-  }
-  if (lowStockMax) {
-    sql += ' AND stock <= ?';
-    params.push(Number(lowStockMax));
-  }
-  sql += ' ORDER BY brand ASC, name ASC';
-
-  const items = db.prepare(sql).all(...params);
-  res.json(items);
-});
-
-// GET /api/items/brands — distinct brand list with item counts
-router.get('/brands', (req, res) => {
-  const rows = db
-    .prepare('SELECT brand, COUNT(*) as itemCount FROM items GROUP BY brand ORDER BY brand ASC')
+  const orders = db
+    .prepare(
+      `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt,
+              c.id as customerId, c.name as customer
+       FROM orders o
+       JOIN customers c ON c.id = o.customer_id
+       ORDER BY o.id DESC`
+    )
     .all();
-  res.json(rows);
+
+  const lineStmt = db.prepare(
+    `SELECT ol.item_id as id, i.name, i.brand, i.price, ol.qty
+     FROM order_lines ol
+     JOIN items i ON i.id = ol.item_id
+     WHERE ol.order_id = ?`
+  );
+
+  const withLines = orders.map(o => ({
+    ...o,
+    lines: lineStmt.all(o.id),
+  }));
+
+  res.json(withLines);
 });
 
-// POST /api/items — add a new item  { id, brand, name, stock }
+// POST /api/orders — create an order and decrement stock atomically
+// body: { customerId, deliveryDate, lines: [{ itemId, qty }, ...] }
 router.post('/', (req, res) => {
-  const { id, brand, name, stock } = req.body;
-  if (!id || !brand || !name) {
-    return res.status(400).json({ error: 'id, brand, and name are required' });
-  }
-  try {
-    db.prepare('INSERT INTO items (id, brand, name, stock) VALUES (?, ?, ?, ?)').run(
-      id,
-      brand,
-      name,
-      Number(stock) || 0
-    );
-    res.status(201).json({ id, brand, name, stock: Number(stock) || 0 });
-  } catch (err) {
-    if (err.code === 'SQLITE_CONSTRAINT_PRIMARYKEY') {
-      return res.status(409).json({ error: `An item with SKU "${id}" already exists` });
-    }
-    throw err;
-  }
-});
+  const { customerId, deliveryDate, lines } = req.body;
 
-// PATCH /api/items/:id — manually adjust stock  { stock }
-// (For corrections — normal stock changes should happen via orders.)
-router.patch('/:id', (req, res) => {
-  const { stock } = req.body;
-  if (stock === undefined || Number.isNaN(Number(stock))) {
-    return res.status(400).json({ error: 'stock must be a number' });
+  if (!customerId || !deliveryDate || !Array.isArray(lines) || lines.length === 0) {
+    return res.status(400).json({ error: 'customerId, deliveryDate, and at least one line are required' });
   }
-  const info = db.prepare('UPDATE items SET stock = ? WHERE id = ?').run(Number(stock), req.params.id);
-  if (info.changes === 0) return res.status(404).json({ error: 'Item not found' });
-  res.json({ id: req.params.id, stock: Number(stock) });
+
+  const customer = db.prepare('SELECT id, name FROM customers WHERE id = ?').get(customerId);
+  if (!customer) return res.status(404).json({ error: 'Customer not found' });
+
+  // Validate every line and check stock BEFORE writing anything.
+  const getItem = db.prepare('SELECT id, name, brand, stock, price FROM items WHERE id = ?');
+  const resolvedLines = [];
+  for (const line of lines) {
+    const item = getItem.get(line.itemId);
+    if (!item) return res.status(404).json({ error: `Item "${line.itemId}" not found` });
+    const qty = Number(line.qty);
+    if (!qty || qty <= 0) return res.status(400).json({ error: `Invalid quantity for "${item.name}"` });
+    if (qty > item.stock) {
+      return res.status(409).json({
+        error: `Not enough stock for "${item.name}" — ${item.stock} available, ${qty} requested`,
+      });
+    }
+    resolvedLines.push({ item, qty });
+  }
+
+  const insertOrder = db.prepare(
+    'INSERT INTO orders (customer_id, delivery_date, submitted_at) VALUES (?, ?, ?)'
+  );
+  const insertLine = db.prepare('INSERT INTO order_lines (order_id, item_id, qty) VALUES (?, ?, ?)');
+  const decrementStock = db.prepare('UPDATE items SET stock = stock - ? WHERE id = ?');
+
+  const submittedAt = new Date().toISOString();
+
+  const createOrder = db.transaction(() => {
+    const orderInfo = insertOrder.run(customerId, deliveryDate, submittedAt);
+    const orderId = orderInfo.lastInsertRowid;
+    for (const { item, qty } of resolvedLines) {
+      insertLine.run(orderId, item.id, qty);
+      decrementStock.run(qty, item.id);
+    }
+    return orderId;
+  });
+
+  const orderId = createOrder();
+
+  res.status(201).json({
+    id: orderId,
+    customer: customer.name,
+    customerId,
+    deliveryDate,
+    submittedAt,
+    lines: resolvedLines.map(({ item, qty }) => ({ id: item.id, name: item.name, brand: item.brand, price: item.price, qty })),
+  });
 });
 
 module.exports = router;
