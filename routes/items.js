@@ -3,89 +3,101 @@ const db = require('../db');
 
 const router = express.Router();
 
-// GET /api/orders — list all orders, newest first, with line items nested
+// GET /api/items — list items (current live inventory).
+// By default only active items are returned (what the ordering app and
+// inventory browser should see). Pass ?includeInactive=true for everyone,
+// e.g. for the office management view.
+// Optional query params: ?brand=Oberto  ?lowStockMax=5  ?includeInactive=true
 router.get('/', (req, res) => {
-  const orders = db
-    .prepare(
-      `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt,
-              c.id as customerId, c.name as customer
-       FROM orders o
-       JOIN customers c ON c.id = o.customer_id
-       ORDER BY o.id DESC`
-    )
-    .all();
+    const { brand, lowStockMax, includeInactive } = req.query;
+    let sql = 'SELECT id, brand, name, stock, price, active FROM items WHERE 1=1';
+    const params = [];
 
-  const lineStmt = db.prepare(
-    `SELECT ol.item_id as id, i.name, i.brand, i.price, ol.qty
-     FROM order_lines ol
-     JOIN items i ON i.id = ol.item_id
-     WHERE ol.order_id = ?`
-  );
+             if (includeInactive !== 'true') {
+                   sql += ' AND active = 1';
+             }
+    if (brand) {
+          sql += ' AND brand = ?';
+          params.push(brand);
+    }
+    if (lowStockMax) {
+          sql += ' AND stock <= ?';
+          params.push(Number(lowStockMax));
+    }
+    sql += ' ORDER BY brand ASC, name ASC';
 
-  const withLines = orders.map(o => ({
-    ...o,
-    lines: lineStmt.all(o.id),
-  }));
-
-  res.json(withLines);
+             const items = db.prepare(sql).all(...params);
+    res.json(items);
 });
 
-// POST /api/orders — create an order and decrement stock atomically
-// body: { customerId, deliveryDate, lines: [{ itemId, qty }, ...] }
+// GET /api/items/brands — distinct brand list with item counts (active items only)
+router.get('/brands', (req, res) => {
+    const rows = db
+      .prepare('SELECT brand, COUNT(*) as itemCount FROM items WHERE active = 1 GROUP BY brand ORDER BY brand ASC')
+      .all();
+    res.json(rows);
+});
+
+// POST /api/items — add a new item  { id, brand, name, stock, price }
 router.post('/', (req, res) => {
-  const { customerId, deliveryDate, lines } = req.body;
-
-  if (!customerId || !deliveryDate || !Array.isArray(lines) || lines.length === 0) {
-    return res.status(400).json({ error: 'customerId, deliveryDate, and at least one line are required' });
-  }
-
-  const customer = db.prepare('SELECT id, name FROM customers WHERE id = ?').get(customerId);
-  if (!customer) return res.status(404).json({ error: 'Customer not found' });
-
-  // Validate every line and check stock BEFORE writing anything.
-  const getItem = db.prepare('SELECT id, name, brand, stock, price FROM items WHERE id = ?');
-  const resolvedLines = [];
-  for (const line of lines) {
-    const item = getItem.get(line.itemId);
-    if (!item) return res.status(404).json({ error: `Item "${line.itemId}" not found` });
-    const qty = Number(line.qty);
-    if (!qty || qty <= 0) return res.status(400).json({ error: `Invalid quantity for "${item.name}"` });
-    if (qty > item.stock) {
-      return res.status(409).json({
-        error: `Not enough stock for "${item.name}" — ${item.stock} available, ${qty} requested`,
-      });
+    const { id, brand, name, stock, price } = req.body;
+    if (!id || !brand || !name) {
+          return res.status(400).json({ error: 'id, brand, and name are required' });
     }
-    resolvedLines.push({ item, qty });
-  }
-
-  const insertOrder = db.prepare(
-    'INSERT INTO orders (customer_id, delivery_date, submitted_at) VALUES (?, ?, ?)'
-  );
-  const insertLine = db.prepare('INSERT INTO order_lines (order_id, item_id, qty) VALUES (?, ?, ?)');
-  const decrementStock = db.prepare('UPDATE items SET stock = stock - ? WHERE id = ?');
-
-  const submittedAt = new Date().toISOString();
-
-  const createOrder = db.transaction(() => {
-    const orderInfo = insertOrder.run(customerId, deliveryDate, submittedAt);
-    const orderId = orderInfo.lastInsertRowid;
-    for (const { item, qty } of resolvedLines) {
-      insertLine.run(orderId, item.id, qty);
-      decrementStock.run(qty, item.id);
+    try {
+          db.prepare('INSERT INTO items (id, brand, name, stock, price) VALUES (?, ?, ?, ?, ?)').run(
+                  id,
+                  brand,
+                  name,
+                  Number(stock) || 0,
+                  Number(price) || 0
+                );
+          res.status(201).json({ id, brand, name, stock: Number(stock) || 0, price: Number(price) || 0, active: 1 });
+    } catch (err) {
+          if (err.code === 'SQLITE_CONSTRAINT_PRIMARYKEY') {
+                  return res.status(409).json({ error: `An item with SKU "${id}" already exists` });
+          }
+          throw err;
     }
-    return orderId;
-  });
+});
 
-  const orderId = createOrder();
+// PATCH /api/items/:id — adjust stock and/or toggle active  { stock?, active? }
+// (For corrections — normal stock changes should happen via orders.)
+router.patch('/:id', (req, res) => {
+    const { stock, active } = req.body;
+    if (stock === undefined && active === undefined) {
+          return res.status(400).json({ error: 'stock and/or active must be provided' });
+    }
+    if (stock !== undefined && Number.isNaN(Number(stock))) {
+          return res.status(400).json({ error: 'stock must be a number' });
+    }
+    if (active !== undefined && typeof active !== 'boolean') {
+          return res.status(400).json({ error: 'active must be true or false' });
+    }
 
-  res.status(201).json({
-    id: orderId,
-    customer: customer.name,
-    customerId,
-    deliveryDate,
-    submittedAt,
-    lines: resolvedLines.map(({ item, qty }) => ({ id: item.id, name: item.name, brand: item.brand, price: item.price, qty })),
-  });
+               const updates = [];
+    const params = [];
+    if (stock !== undefined) { updates.push('stock = ?'); params.push(Number(stock)); }
+    if (active !== undefined) { updates.push('active = ?'); params.push(active ? 1 : 0); }
+    params.push(req.params.id);
+
+               const info = db.prepare(`UPDATE items SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+    if (info.changes === 0) return res.status(404).json({ error: 'Item not found' });
+
+               const result = { id: req.params.id };
+    if (stock !== undefined) result.stock = Number(stock);
+    if (active !== undefined) result.active = active;
+    res.json(result);
+});
+
+// PATCH /api/items/brand/:brand — bulk toggle active for every item in a brand  { active }
+router.patch('/brand/:brand', (req, res) => {
+    const { active } = req.body;
+    if (typeof active !== 'boolean') {
+          return res.status(400).json({ error: 'active must be true or false' });
+    }
+    const info = db.prepare('UPDATE items SET active = ? WHERE brand = ?').run(active ? 1 : 0, req.params.brand);
+    res.json({ brand: req.params.brand, active, itemsUpdated: info.changes });
 });
 
 module.exports = router;
