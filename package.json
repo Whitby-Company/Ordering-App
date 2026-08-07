@@ -1,0 +1,16 @@
+{
+  "name": "inventory-order-backend",
+  "version": "1.0.0",
+  "description": "Backend API for the mobile order-entry app: customers, live inventory, and orders.",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "seed": "node seed.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0",
+    "cors": "^2.8.5",
+    "express": "^4.19.2"
+  }
+}
