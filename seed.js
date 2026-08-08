@@ -14,7 +14,7 @@ const data = require('./seed-data.json');
 
 const insertCustomer = db.prepare('INSERT INTO customers (name, active) VALUES (@name, @active)');
 const insertItem = db.prepare(
-  'INSERT INTO items (id, brand, name, stock, price, active) VALUES (@id, @brand, @name, @stock, @price, @active)'
+  'INSERT INTO items (id, brand, name, stock, price, pack, packLabel, active) VALUES (@id, @brand, @name, @stock, @price, @pack, @packLabel, @active)'
 );
 
 const run = db.transaction(() => {
@@ -27,7 +27,12 @@ const run = db.transaction(() => {
     insertCustomer.run({ name: c.name, active: c.active === false ? 0 : 1 });
   }
   for (const item of data.items) {
-    insertItem.run({ ...item, active: item.active === false ? 0 : 1 });
+    insertItem.run({
+      ...item,
+      pack: item.pack || 1,
+      packLabel: item.packLabel || null,
+      active: item.active === false ? 0 : 1,
+    });
   }
 });
 

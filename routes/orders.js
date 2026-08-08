@@ -16,7 +16,7 @@ router.get('/', (req, res) => {
     .all();
 
   const lineStmt = db.prepare(
-    `SELECT ol.item_id as id, i.name, i.brand, i.price, ol.qty
+    `SELECT ol.item_id as id, i.name, i.brand, i.price, i.pack, ol.qty
      FROM order_lines ol
      JOIN items i ON i.id = ol.item_id
      WHERE ol.order_id = ?`
@@ -43,7 +43,7 @@ router.post('/', (req, res) => {
   if (!customer) return res.status(404).json({ error: 'Customer not found' });
 
   // Validate every line and check stock BEFORE writing anything.
-  const getItem = db.prepare('SELECT id, name, brand, stock, price FROM items WHERE id = ?');
+  const getItem = db.prepare('SELECT id, name, brand, stock, price, pack FROM items WHERE id = ?');
   const resolvedLines = [];
   for (const line of lines) {
     const item = getItem.get(line.itemId);
@@ -84,7 +84,7 @@ router.post('/', (req, res) => {
     customerId,
     deliveryDate,
     submittedAt,
-    lines: resolvedLines.map(({ item, qty }) => ({ id: item.id, name: item.name, brand: item.brand, price: item.price, qty })),
+    lines: resolvedLines.map(({ item, qty }) => ({ id: item.id, name: item.name, brand: item.brand, price: item.price, pack: item.pack, qty })),
   });
 });
 

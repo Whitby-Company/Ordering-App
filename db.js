@@ -24,7 +24,9 @@ db.exec(`
     brand TEXT NOT NULL,
     name TEXT NOT NULL,
     stock INTEGER NOT NULL DEFAULT 0,
-    price REAL NOT NULL DEFAULT 0,
+    price REAL NOT NULL DEFAULT 0,   -- price per single "each", not per case
+    pack INTEGER NOT NULL DEFAULT 1, -- number of "eaches" per case/pack ordered
+    packLabel TEXT,                   -- display string, e.g. '12/7.5oz'
     active INTEGER NOT NULL DEFAULT 1
   );
 
@@ -57,6 +59,12 @@ if (!itemColumns.includes('price')) {
 }
 if (!itemColumns.includes('active')) {
   db.exec('ALTER TABLE items ADD COLUMN active INTEGER NOT NULL DEFAULT 1');
+}
+if (!itemColumns.includes('pack')) {
+  db.exec('ALTER TABLE items ADD COLUMN pack INTEGER NOT NULL DEFAULT 1');
+}
+if (!itemColumns.includes('packLabel')) {
+  db.exec('ALTER TABLE items ADD COLUMN packLabel TEXT');
 }
 const customerColumns = db.prepare("PRAGMA table_info(customers)").all().map(c => c.name);
 if (!customerColumns.includes('active')) {
