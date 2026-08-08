@@ -138,4 +138,46 @@ router.patch('/brand/:brand', (req, res) => {
   res.json({ brand: rename !== undefined ? rename.trim() : req.params.brand, active, itemsUpdated });
 });
 
+// POST /api/items/bulk-update — apply stock/price updates to many items at once,
+// e.g. from a CSV re-upload. body: { updates: [{ id, stock?, price? }, ...] }
+// Runs as a single transaction; unknown ids are reported back, not errored on.
+router.post('/bulk-update', (req, res) => {
+  const { updates } = req.body;
+  if (!Array.isArray(updates) || updates.length === 0) {
+    return res.status(400).json({ error: 'updates must be a non-empty array' });
+  }
+
+  const getItem = db.prepare('SELECT id FROM items WHERE id = ?');
+  const updateStock = db.prepare('UPDATE items SET stock = ? WHERE id = ?');
+  const updatePrice = db.prepare('UPDATE items SET price = ? WHERE id = ?');
+  const updateBoth = db.prepare('UPDATE items SET stock = ?, price = ? WHERE id = ?');
+
+  const notFound = [];
+  let updated = 0;
+
+  const run = db.transaction(() => {
+    for (const u of updates) {
+      if (!u || !u.id) continue;
+      if (!getItem.get(u.id)) { notFound.push(u.id); continue; }
+
+      const hasStock = u.stock !== undefined && u.stock !== null && u.stock !== '' && !Number.isNaN(Number(u.stock));
+      const hasPrice = u.price !== undefined && u.price !== null && u.price !== '' && !Number.isNaN(Number(u.price));
+
+      if (hasStock && hasPrice) {
+        updateBoth.run(Number(u.stock), Number(u.price), u.id);
+        updated++;
+      } else if (hasStock) {
+        updateStock.run(Number(u.stock), u.id);
+        updated++;
+      } else if (hasPrice) {
+        updatePrice.run(Number(u.price), u.id);
+        updated++;
+      }
+    }
+  });
+  run();
+
+  res.json({ updated, notFound, totalRows: updates.length });
+});
+
 module.exports = router;
