@@ -738,7 +738,7 @@
     },
     {
       "id": "AOP:130002c",
-      "brand": "AOP",
+      "brand": "Astro",
       "name": "Astro FD I/C - Vanilla",
       "pack": 12,
       "packLabel": "12/1.2oz",
@@ -748,7 +748,7 @@
     },
     {
       "id": "AOP:130006c",
-      "brand": "AOP",
+      "brand": "Astro",
       "name": "Astro FD I/C - Neopolitan",
       "pack": 12,
       "packLabel": "12/1.2oz",
@@ -758,7 +758,7 @@
     },
     {
       "id": "AOP:130007c",
-      "brand": "AOP",
+      "brand": "Astro",
       "name": "Astro FD I/C - Mint",
       "pack": 12,
       "packLabel": "12/1.1oz",
@@ -768,7 +768,7 @@
     },
     {
       "id": "AOP:130009c",
-      "brand": "AOP",
+      "brand": "Astro",
       "name": "Astro FD I/C - C&C",
       "pack": 12,
       "packLabel": "12/1.1oz",
@@ -948,7 +948,7 @@
     },
     {
       "id": "AZLBA:201027",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Bulk Choc Chip Cookie Dough - Milk Choc",
       "pack": 1,
       "packLabel": "1/10lbs",
@@ -958,7 +958,7 @@
     },
     {
       "id": "AZLBA:203004",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Bulk Yogurt Pretzels",
       "pack": 1,
       "packLabel": "1/10lbs",
@@ -968,7 +968,7 @@
     },
     {
       "id": "AZLBA:50108",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Bulk Gummi Bears - Pineapple",
       "pack": 4,
       "packLabel": "4/5lbs",
@@ -978,7 +978,7 @@
     },
     {
       "id": "AZLBA:50112",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Bulk Gummi Bears - Mango",
       "pack": 4,
       "packLabel": "4/5lbs",
@@ -988,7 +988,7 @@
     },
     {
       "id": "AZLBA:50114",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Bulk Gummi Bears - Sour",
       "pack": 4,
       "packLabel": "4/5lbs",
@@ -998,7 +998,7 @@
     },
     {
       "id": "AZLBA:50117",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Bulk Gummi Bears - Sour",
       "pack": 4,
       "packLabel": "4/4.5lbs",
@@ -1008,7 +1008,7 @@
     },
     {
       "id": "AZLBA:50124",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Bulk Gummi Mini Worms 2'' - Neon",
       "pack": 4,
       "packLabel": "4/4.5lbs",
@@ -1018,7 +1018,7 @@
     },
     {
       "id": "AZLBA:50126",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Bulk Gummi Sour Poppers",
       "pack": 4,
       "packLabel": "4/4.5lbs",
@@ -1028,7 +1028,7 @@
     },
     {
       "id": "AZLBA:50128",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Bulk Sanded Gummi Rings - Apple",
       "pack": 4,
       "packLabel": "4/4.5lbs",
@@ -1038,7 +1038,7 @@
     },
     {
       "id": "AZLBA:50129",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Bulk Sanded Gummi Rings - Peach",
       "pack": 4,
       "packLabel": "4/4.5lbs",
@@ -1048,7 +1048,7 @@
     },
     {
       "id": "AZLBA:50130",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Bulk Sanded Gummi Rings - Straw Banana",
       "pack": 4,
       "packLabel": "4/4.5lbs",
@@ -1058,7 +1058,7 @@
     },
     {
       "id": "AZLBA:50131",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Bulk Sanded Gummi Rings - Blue Raspberry",
       "pack": 4,
       "packLabel": "4/4.5lbs",
@@ -1068,7 +1068,7 @@
     },
     {
       "id": "AZLBA:50134",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Bulk Sanded Gummi Rings - Watermelon",
       "pack": 4,
       "packLabel": "4/4.5lbs",
@@ -1078,7 +1078,7 @@
     },
     {
       "id": "AZLBA:50137",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Bulk Gummi Mini Worms 2''",
       "pack": 4,
       "packLabel": "4/5lbs",
@@ -1088,7 +1088,7 @@
     },
     {
       "id": "AZLBA:50160",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Bulk Gummi Army Men - Green Apple",
       "pack": 4,
       "packLabel": "4/5lbs",
@@ -1098,7 +1098,7 @@
     },
     {
       "id": "AZLBA:50162",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Bulk Gummi Awesome Blossoms",
       "pack": 4,
       "packLabel": "4/5lbs",
@@ -1108,7 +1108,7 @@
     },
     {
       "id": "AZLBA:50176",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Bulk Gummi Bears - Grapefruit",
       "pack": 4,
       "packLabel": "4/5lbs",
@@ -1118,7 +1118,7 @@
     },
     {
       "id": "AZLBA:50193",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Bulk Blue Gummi Sharks",
       "pack": 4,
       "packLabel": "4/5lbs",
@@ -1128,7 +1128,7 @@
     },
     {
       "id": "AZLBA:50200",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Bulk Gummi Bears - 12 Flvr Asst",
       "pack": 4,
       "packLabel": "4/5lbs",
@@ -1138,7 +1138,7 @@
     },
     {
       "id": "AZLBA:50233",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Bulk Gummi Butterflies - Large",
       "pack": 4,
       "packLabel": "4/5lbs",
@@ -1148,7 +1148,7 @@
     },
     {
       "id": "AZLBA:50234",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Bulk Gummi Mini Butterflies",
       "pack": 4,
       "packLabel": "4/5lbs",
@@ -1158,7 +1158,7 @@
     },
     {
       "id": "AZLBA:50235",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Bulk Gummi Bear Cubs",
       "pack": 4,
       "packLabel": "4/5lbs",
@@ -1168,7 +1168,7 @@
     },
     {
       "id": "AZLBA:53327c",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Albanese Gust Bag - Mini 12 Flvr Sour Worms",
       "pack": 6,
       "packLabel": "6/8oz",
@@ -1178,7 +1178,7 @@
     },
     {
       "id": "AZLBA:53348c",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Albanese Lg Bg - 12 Flvr Bear",
       "pack": 12,
       "packLabel": "12/7.5oz",
@@ -1188,7 +1188,7 @@
     },
     {
       "id": "AZLBA:53356c",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Albanese Lg Bg - Sour Mini Worms",
       "pack": 12,
       "packLabel": "12/7oz",
@@ -1198,7 +1198,7 @@
     },
     {
       "id": "AZLBA:53380c",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Albanese Gust Bag - 12 Flvr Bears",
       "pack": 6,
       "packLabel": "6/9oz",
@@ -1208,7 +1208,7 @@
     },
     {
       "id": "AZLBA:53381c",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Albanese Gust Bag - Mini 12 Flvr Worms",
       "pack": 6,
       "packLabel": "6/9oz",
@@ -1218,7 +1218,7 @@
     },
     {
       "id": "AZLBA:53443c",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Albanese 12 Flvr. Gummi Bear Cubs 50ct",
       "pack": 6,
       "packLabel": "6/25oz",
@@ -1228,7 +1228,7 @@
     },
     {
       "id": "AZLBA:53450c",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Albn Sm Peg Bag - 12 Flvr Bears",
       "pack": 12,
       "packLabel": "12/3.5oz",
@@ -1238,7 +1238,7 @@
     },
     {
       "id": "AZLBA:53451c",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Albn Sm Peg Bag - 12 Flvr Worms",
       "pack": 12,
       "packLabel": "12/3.5oz",
@@ -1248,7 +1248,7 @@
     },
     {
       "id": "AZLBA:53455c",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Albn Sm Peg Bag - 12 Flvr Bears Sour",
       "pack": 12,
       "packLabel": "12/3.5oz",
@@ -1258,7 +1258,7 @@
     },
     {
       "id": "AZLBA:53462c",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Albn Sm Peg Bag - 12 Flvr Worms Sour",
       "pack": 12,
       "packLabel": "12/3.5oz",
@@ -1268,7 +1268,7 @@
     },
     {
       "id": "AZLBA:53480c",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Albanese Gust Bag - Ultimate 8 Flvr Bears",
       "pack": 6,
       "packLabel": "6/7.75oz",
@@ -1278,7 +1278,7 @@
     },
     {
       "id": "AZLBA:53500",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Albanese 12 Flvr. Gummi Bear Ctgds",
       "pack": 12,
       "packLabel": "12/2oz",
@@ -1288,7 +1288,7 @@
     },
     {
       "id": "AZLBA:53500c",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Albanese 12 Flvr. Gummi Bear Ctgds",
       "pack": 144,
       "packLabel": "12 boxes x 12 (144 total) 2oz",
@@ -1298,7 +1298,7 @@
     },
     {
       "id": "AZLBA:53571c",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Albn Sm Peg Bg - True Fruit  Amc Fav",
       "pack": 12,
       "packLabel": "12/2.5oz",
@@ -1308,7 +1308,7 @@
     },
     {
       "id": "AZLBA:53714c",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Albn Gust Bg MC Cvr'd Bears",
       "pack": 6,
       "packLabel": "6/4.5oz",
@@ -1318,7 +1318,7 @@
     },
     {
       "id": "AZLBA:53715c",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Albn Gust Bg MC Cvr'd Bears Shipper",
       "pack": 40,
       "packLabel": "40/4.5oz",
@@ -3388,7 +3388,7 @@
     },
     {
       "id": "JH:JH 14300c",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Quad - Hazelnut",
       "pack": 6,
       "packLabel": "6/8.82oz",
@@ -3398,7 +3398,7 @@
     },
     {
       "id": "JH:JH 14301c",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Quad - Chocolate",
       "pack": 6,
       "packLabel": "6/8.82oz",
@@ -3408,7 +3408,7 @@
     },
     {
       "id": "JH:JH 14302c",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Quad - Vanilla",
       "pack": 6,
       "packLabel": "6/8.82oz",
@@ -3418,7 +3418,7 @@
     },
     {
       "id": "JH:JH 14303c",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Quad - Dark Chocolate",
       "pack": 6,
       "packLabel": "6/8.82oz",
@@ -3548,7 +3548,7 @@
     },
     {
       "id": "JH:JH TXUnsaltc",
-      "brand": "Texas Roasting Company LLC.",
+      "brand": "TXRC",
       "name": "TX In-Shell Peanut - Unsalted",
       "pack": 12,
       "packLabel": "12/16oz",
@@ -3848,7 +3848,7 @@
     },
     {
       "id": "Loacker:10112c",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker I/C Wafer- Lemon",
       "pack": 18,
       "packLabel": "18/5.29oz",
@@ -3858,7 +3858,7 @@
     },
     {
       "id": "Loacker:10234c",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Tortina Mini SUB - Original",
       "pack": 15,
       "packLabel": "15/3.17oz",
@@ -3868,7 +3868,7 @@
     },
     {
       "id": "Loacker:10643",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Sm Bar - Lemon",
       "pack": 1,
       "packLabel": "1.59oz",
@@ -3878,7 +3878,7 @@
     },
     {
       "id": "Loacker:10643c",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Sm Bar - Lemon",
       "pack": 144,
       "packLabel": "12 boxes x 12 (144 total) 1.59oz",
@@ -3888,7 +3888,7 @@
     },
     {
       "id": "Loacker:10646",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Sm Bar - Chocolate",
       "pack": 1,
       "packLabel": "1.59oz",
@@ -3898,7 +3898,7 @@
     },
     {
       "id": "Loacker:10646c",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Sm Bar - Chocolate",
       "pack": 144,
       "packLabel": "12 boxes x 12 (144 total) 1.59oz",
@@ -3908,7 +3908,7 @@
     },
     {
       "id": "Loacker:10670c",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Thins Lg Bar - Espresso",
       "pack": 18,
       "packLabel": "18/5.29 oz",
@@ -3918,7 +3918,7 @@
     },
     {
       "id": "Loacker:10671",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Sm Bar - Hazelnut",
       "pack": 1,
       "packLabel": "1.59oz",
@@ -3928,7 +3928,7 @@
     },
     {
       "id": "Loacker:10671c",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Sm Bar - Hazelnut",
       "pack": 144,
       "packLabel": "12 boxes x 12 (144 total) 1.59oz",
@@ -3938,7 +3938,7 @@
     },
     {
       "id": "Loacker:10674",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Sm Bar - Vanilla 1.59ozz",
       "pack": 1,
       "packLabel": null,
@@ -3948,7 +3948,7 @@
     },
     {
       "id": "Loacker:10674c",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Sm Bar - Vanilla",
       "pack": 144,
       "packLabel": "12 boxes x 12 (144 total) 1.59oz",
@@ -3958,7 +3958,7 @@
     },
     {
       "id": "Loacker:10675",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Sm Bar - Dark Chocolate",
       "pack": 1,
       "packLabel": "1.59oz",
@@ -3968,7 +3968,7 @@
     },
     {
       "id": "Loacker:10675c",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Sm Bar - Dark Chocolate",
       "pack": 144,
       "packLabel": "12 boxes x 12 (144 total) 1.59oz",
@@ -3978,7 +3978,7 @@
     },
     {
       "id": "Loacker:10690c",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Thins Lg Bar - Dark Choc",
       "pack": 18,
       "packLabel": "18/5.29 oz",
@@ -3988,7 +3988,7 @@
     },
     {
       "id": "Loacker:10731c",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Lg Bar - Hazelnut",
       "pack": 18,
       "packLabel": "18/6.17 oz",
@@ -3998,7 +3998,7 @@
     },
     {
       "id": "Loacker:10736c",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Lg Bar - Chocolate",
       "pack": 18,
       "packLabel": "18/6.17oz",
@@ -4008,7 +4008,7 @@
     },
     {
       "id": "Loacker:11200c",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Mini Quad - Hazelnut",
       "pack": 12,
       "packLabel": "12/1.9oz",
@@ -4018,7 +4018,7 @@
     },
     {
       "id": "Loacker:11201c",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Mini Quad - Chocolate",
       "pack": 12,
       "packLabel": "12/1.9oz",
@@ -4028,7 +4028,7 @@
     },
     {
       "id": "Loacker:12581",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker KS Bar - Hazelnut",
       "pack": 1,
       "packLabel": "2.65oz",
@@ -4038,7 +4038,7 @@
     },
     {
       "id": "Loacker:12581c",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker KS Bar - Hazelnut",
       "pack": 48,
       "packLabel": "4 boxes x 12 (48 total) 2.65oz",
@@ -4048,7 +4048,7 @@
     },
     {
       "id": "Loacker:12586",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker KS Bars - Chocolate",
       "pack": 1,
       "packLabel": "2.65oz",
@@ -4058,7 +4058,7 @@
     },
     {
       "id": "Loacker:12586c",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker KS Bars - Chocolate",
       "pack": 48,
       "packLabel": "4 boxes x 12 (48 total) 2.65oz",
@@ -4068,7 +4068,7 @@
     },
     {
       "id": "Loacker:12587",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker KS Bar - Vanilla",
       "pack": 1,
       "packLabel": "2.65oz",
@@ -4078,7 +4078,7 @@
     },
     {
       "id": "Loacker:12587c",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker KS Bar - Vanilla",
       "pack": 48,
       "packLabel": "4 boxes x 12 (48 total) 2.65oz",
@@ -4088,7 +4088,7 @@
     },
     {
       "id": "Loacker:13501",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Sm Bar - Strawberry",
       "pack": 1,
       "packLabel": "1.59oz",
@@ -4098,7 +4098,7 @@
     },
     {
       "id": "Loacker:13501c",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Sm Bar - Strawberry",
       "pack": 144,
       "packLabel": "12 boxes x 12 (144 total) 1.59oz",
@@ -4108,7 +4108,7 @@
     },
     {
       "id": "Loacker:13750c",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Clsc Mini's Asst Bag",
       "pack": 6,
       "packLabel": "6/14.11oz",
@@ -4118,7 +4118,7 @@
     },
     {
       "id": "Loacker:14115c",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Chocolatier Lg Bar - Dark",
       "pack": 16,
       "packLabel": "16/4.16oz",
@@ -4128,7 +4128,7 @@
     },
     {
       "id": "Loacker:14116c",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Chocolatier Lg Bar - Milk",
       "pack": 16,
       "packLabel": "16/4.16oz",
@@ -4138,7 +4138,7 @@
     },
     {
       "id": "Loacker:14300c",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Quad - Hazelnut",
       "pack": 6,
       "packLabel": "6/8.82oz",
@@ -4148,7 +4148,7 @@
     },
     {
       "id": "Loacker:14301c",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Quad - Chocolate",
       "pack": 6,
       "packLabel": "6/8.82oz",
@@ -4158,7 +4158,7 @@
     },
     {
       "id": "Loacker:14302c",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Quad - Vanilla",
       "pack": 6,
       "packLabel": "6/8.82oz",
@@ -4168,7 +4168,7 @@
     },
     {
       "id": "Loacker:14303c",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Quad - Dark Chocolate",
       "pack": 6,
       "packLabel": "6/8.82oz",
@@ -4178,7 +4178,7 @@
     },
     {
       "id": "Loacker:14313c",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Quad - Matcha",
       "pack": 6,
       "packLabel": "6/8.82oz",
@@ -4188,7 +4188,7 @@
     },
     {
       "id": "Loacker:14314c",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Quad - Peanut Butter",
       "pack": 6,
       "packLabel": "6/8.82oz",
@@ -4198,7 +4198,7 @@
     },
     {
       "id": "Loacker:14336c",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Quad - Strawberry",
       "pack": 6,
       "packLabel": "6/8.82oz",
@@ -4208,7 +4208,7 @@
     },
     {
       "id": "Loacker:14440c",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Thins Lg Bar - Hazelnut",
       "pack": 18,
       "packLabel": "18/5.29 oz",
@@ -4218,7 +4218,7 @@
     },
     {
       "id": "Loacker:16953-802",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Lg Bars Shipper",
       "pack": 96,
       "packLabel": "96/6.17oz",
@@ -4228,7 +4228,7 @@
     },
     {
       "id": "Loacker:16955-001",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "I/C Bars Shipper",
       "pack": 1,
       "packLabel": "5.29oz",
@@ -4238,7 +4238,7 @@
     },
     {
       "id": "Loacker:16961-003",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Asst King Size Shipper",
       "pack": 120,
       "packLabel": "120/2.65oz",
@@ -4248,7 +4248,7 @@
     },
     {
       "id": "Loacker:17205-809",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Quad Shippers",
       "pack": 48,
       "packLabel": "48/8.82oz",
@@ -4258,7 +4258,7 @@
     },
     {
       "id": "Loacker:17251-809",
-      "brand": "Loacker USA, Inc.",
+      "brand": "Loacker",
       "name": "Loacker Quad Qtr Pallet",
       "pack": 144,
       "packLabel": "144/8.82oz",
@@ -4268,7 +4268,7 @@
     },
     {
       "id": "Lotus:30624c",
-      "brand": "Lotus Bakeries North America",
+      "brand": "Lotus",
       "name": "Biscoff Cookie 10pc",
       "pack": 8,
       "packLabel": "8/8.8oz",
@@ -4278,7 +4278,7 @@
     },
     {
       "id": "Lotus:50629c",
-      "brand": "Lotus Bakeries North America",
+      "brand": "Lotus",
       "name": "Biscoff Family Pack",
       "pack": 10,
       "packLabel": "10/8.8oz",
@@ -4288,7 +4288,7 @@
     },
     {
       "id": "Lotus:50635c",
-      "brand": "Lotus Bakeries North America",
+      "brand": "Lotus",
       "name": "Biscoff Sandwich - Milk Choc",
       "pack": 9,
       "packLabel": "9/5.29oz",
@@ -4298,7 +4298,7 @@
     },
     {
       "id": "Lotus:50636c",
-      "brand": "Lotus Bakeries North America",
+      "brand": "Lotus",
       "name": "Biscoff Sandwich - Biscoff Creme",
       "pack": 9,
       "packLabel": "9/5.29oz",
@@ -4308,7 +4308,7 @@
     },
     {
       "id": "Lotus:50637c",
-      "brand": "Lotus Bakeries North America",
+      "brand": "Lotus",
       "name": "Biscoff Sandwich - Vanilla",
       "pack": 9,
       "packLabel": "9/5.29oz",
@@ -4318,7 +4318,7 @@
     },
     {
       "id": "Lotus:50643c",
-      "brand": "Lotus Bakeries North America",
+      "brand": "Lotus",
       "name": "Biscoff Cookie 6pc",
       "pack": 12,
       "packLabel": "12/3.3oz",
@@ -4328,7 +4328,7 @@
     },
     {
       "id": "Lotus:50694c",
-      "brand": "Lotus Bakeries North America",
+      "brand": "Lotus",
       "name": "Biscoff Spread - Crunchy",
       "pack": 8,
       "packLabel": "8/13.4oz",
@@ -4338,7 +4338,7 @@
     },
     {
       "id": "Lotus:50695c",
-      "brand": "Lotus Bakeries North America",
+      "brand": "Lotus",
       "name": "Biscoff Spread - Creamy",
       "pack": 8,
       "packLabel": "8/14.1oz",
@@ -4348,7 +4348,7 @@
     },
     {
       "id": "Lotus:50697",
-      "brand": "Lotus Bakeries North America",
+      "brand": "Lotus",
       "name": "Biscoff & Go",
       "pack": 8,
       "packLabel": "8/1.6oz",
@@ -4358,7 +4358,7 @@
     },
     {
       "id": "Lotus:50697c",
-      "brand": "Lotus Bakeries North America",
+      "brand": "Lotus",
       "name": "Biscoff & Go",
       "pack": 48,
       "packLabel": "6 boxes x 8 (48 total) 1.6oz",
@@ -4368,7 +4368,7 @@
     },
     {
       "id": "Lotus:53613c",
-      "brand": "Lotus Bakeries North America",
+      "brand": "Lotus",
       "name": "Biscoff Cookie 2pc",
       "pack": 120,
       "packLabel": "6 boxes x 20 (120 total) 0.9oz",
@@ -4378,7 +4378,7 @@
     },
     {
       "id": "Lotus:58604c",
-      "brand": "Lotus Bakeries North America",
+      "brand": "Lotus",
       "name": "Biscoff Sm Cookie",
       "pack": 10,
       "packLabel": "10/4.4oz",
@@ -4388,7 +4388,7 @@
     },
     {
       "id": "Lotus:LD 50694c",
-      "brand": "Lotus Bakeries North America",
+      "brand": "Lotus",
       "name": "Biscoff Spread - Crunchy  CVS#915477",
       "pack": 8,
       "packLabel": "8/13.4oz",
@@ -4398,7 +4398,7 @@
     },
     {
       "id": "Lotus:LD 50695c",
-      "brand": "Lotus Bakeries North America",
+      "brand": "Lotus",
       "name": "Biscoff Spread - Creamy  CVS#970719",
       "pack": 8,
       "packLabel": "8/14.1oz",
@@ -4448,7 +4448,7 @@
     },
     {
       "id": "Menz:HC0115",
-      "brand": "Robern Menz Australia Pty Ltd",
+      "brand": "Menz",
       "name": "VC Bar Peanut Butter",
       "pack": 20,
       "packLabel": "20/1.75oz",
@@ -4458,7 +4458,7 @@
     },
     {
       "id": "Menz:HC0115c",
-      "brand": "Robern Menz Australia Pty Ltd",
+      "brand": "Menz",
       "name": "VC Bar Peanut Butter",
       "pack": 240,
       "packLabel": "12 boxes x 20 (240 total) 1.75oz",
@@ -4468,7 +4468,7 @@
     },
     {
       "id": "Menz:HC0127",
-      "brand": "Robern Menz Australia Pty Ltd",
+      "brand": "Menz",
       "name": "VC Bar Original",
       "pack": 20,
       "packLabel": "20/1.75oz",
@@ -4478,7 +4478,7 @@
     },
     {
       "id": "Menz:HC0127c",
-      "brand": "Robern Menz Australia Pty Ltd",
+      "brand": "Menz",
       "name": "VC Bar Original",
       "pack": 240,
       "packLabel": "12 boxes x 20 (240 total) 1.75oz",
@@ -4488,7 +4488,7 @@
     },
     {
       "id": "Menz:VCSHIPc",
-      "brand": "Robern Menz Australia Pty Ltd",
+      "brand": "Menz",
       "name": "Violet Crumble Bar Shipper",
       "pack": 160,
       "packLabel": "8 boxes x 20 (160 total) 1.75oz",
@@ -6298,7 +6298,7 @@
     },
     {
       "id": "Storck:035261c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "WO/Reisen Med Bag 72ct Asst Shipper",
       "pack": 1,
       "packLabel": null,
@@ -6308,7 +6308,7 @@
     },
     {
       "id": "Storck:035346c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Mamba Smr Skny Twr",
       "pack": 84,
       "packLabel": "84/2.8 - 6.3oz",
@@ -6318,7 +6318,7 @@
     },
     {
       "id": "Storck:036220c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Mamba Party Sz Bags Mixed Qtr Plt",
       "pack": 60,
       "packLabel": "60/27-30oz",
@@ -6328,7 +6328,7 @@
     },
     {
       "id": "Storck:037234c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Werther's Med Bag - Chewy",
       "pack": 12,
       "packLabel": "12/5oz",
@@ -6338,7 +6338,7 @@
     },
     {
       "id": "Storck:037999c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Werther's Med Bag - Soft",
       "pack": 12,
       "packLabel": "12/4.51oz",
@@ -6348,7 +6348,7 @@
     },
     {
       "id": "Storck:038279c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Werther's Med Bag - S/F Chewy",
       "pack": 12,
       "packLabel": "12/2.75oz",
@@ -6358,7 +6358,7 @@
     },
     {
       "id": "Storck:039009c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Merci Sm Box w/tray Finest",
       "pack": 10,
       "packLabel": "10/7oz",
@@ -6368,7 +6368,7 @@
     },
     {
       "id": "Storck:039733",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Riesen Mixed Shipper ....Contains below:..22ea Original Item UPC 0-72799-05127-6..18ea Espresso Item UPC 0-72799-93801-7",
       "pack": 40,
       "packLabel": "40/5.5oz",
@@ -6378,7 +6378,7 @@
     },
     {
       "id": "Storck:039955",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Knoppers 6pc w/tear pad",
       "pack": 8,
       "packLabel": "8/5.3oz",
@@ -6388,7 +6388,7 @@
     },
     {
       "id": "Storck:051582c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Werther's Lg Bag - S/F Orig SUB",
       "pack": 12,
       "packLabel": "12/7.7oz",
@@ -6398,7 +6398,7 @@
     },
     {
       "id": "Storck:055191c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Werther's Med Bag - Vanilla Creme",
       "pack": 12,
       "packLabel": "12/4.51oz",
@@ -6408,7 +6408,7 @@
     },
     {
       "id": "Storck:055252c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Werther's Lg Bag - S/F Chewy SUB",
       "pack": 12,
       "packLabel": "12/7.7oz",
@@ -6418,7 +6418,7 @@
     },
     {
       "id": "Storck:055658c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Mamba Sticks - Original",
       "pack": 144,
       "packLabel": "6 boxes x 24 (144 total) 2.8oz",
@@ -6428,7 +6428,7 @@
     },
     {
       "id": "Storck:055689c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Mamba Sticks - Sour",
       "pack": 144,
       "packLabel": "6 boxes x 24 (144 total) 2.8oz",
@@ -6438,7 +6438,7 @@
     },
     {
       "id": "Storck:055719c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Mamba Sticks - Tropics",
       "pack": 144,
       "packLabel": "6 boxes x 24 (144 total) 2.8oz",
@@ -6448,7 +6448,7 @@
     },
     {
       "id": "Storck:056372c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Mamba Med Bag - Orig",
       "pack": 12,
       "packLabel": "12/7.05oz",
@@ -6458,7 +6458,7 @@
     },
     {
       "id": "Storck:057812c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Werther's Lg Bag - S/F Asst SUB",
       "pack": 12,
       "packLabel": "12/7.7oz",
@@ -6468,7 +6468,7 @@
     },
     {
       "id": "Storck:057843c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Mamba Med Bag - Fruit Strips",
       "pack": 12,
       "packLabel": "12/6.3oz",
@@ -6478,7 +6478,7 @@
     },
     {
       "id": "Storck:057874c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Mamba Med Bag - Magic Sticks",
       "pack": 12,
       "packLabel": "12/6.3oz",
@@ -6488,7 +6488,7 @@
     },
     {
       "id": "Storck:060195",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Merci Valentine Med Box - Finest",
       "pack": 10,
       "packLabel": "10/8.8oz",
@@ -6498,7 +6498,7 @@
     },
     {
       "id": "Storck:060683c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Knoppers 6pc",
       "pack": 8,
       "packLabel": "8/5.03 oz",
@@ -6508,7 +6508,7 @@
     },
     {
       "id": "Storck:061840c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Mamba Med Bag Mixed Shiper",
       "pack": 48,
       "packLabel": "48/6.03-7.05oz",
@@ -6518,7 +6518,7 @@
     },
     {
       "id": "Storck:061871c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Werther's Crml Popcorn Shipper",
       "pack": 48,
       "packLabel": "48/5.29oz",
@@ -6528,7 +6528,7 @@
     },
     {
       "id": "Storck:061925c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Werther's Orig Fall Harvest Shipper",
       "pack": 48,
       "packLabel": "48/7.4-8.57oz",
@@ -6538,7 +6538,7 @@
     },
     {
       "id": "Storck:062199c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "WO Baking Chewy Crmls w/sticks",
       "pack": 1,
       "packLabel": "10.8oz***",
@@ -6548,7 +6548,7 @@
     },
     {
       "id": "Storck:062205c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Storck Club Bag Qtr Plt - Mixed",
       "pack": 1,
       "packLabel": "80ct",
@@ -6558,7 +6558,7 @@
     },
     {
       "id": "Storck:062441c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Merci Finest Selection Choc Shipper",
       "pack": 30,
       "packLabel": "30/7oz",
@@ -6568,7 +6568,7 @@
     },
     {
       "id": "Storck:063622c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Werther's Crml Popcorn Mixed Shipper ....Contains below:..36ea Original Item UPC 0-72799-93254-1..12ea Salted Crml Item UPC 0-72799-93568-9 ..",
       "pack": 48,
       "packLabel": "48/5.29oz",
@@ -6578,7 +6578,7 @@
     },
     {
       "id": "Storck:065619c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Mamba Mixed Shipper",
       "pack": 72,
       "packLabel": "72/2.8oz",
@@ -6588,7 +6588,7 @@
     },
     {
       "id": "Storck:065657c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Toffifay15pc Box Shipper",
       "pack": 40,
       "packLabel": "40/4.4oz",
@@ -6598,7 +6598,7 @@
     },
     {
       "id": "Storck:112399c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Werther's Med Bag - Apple Filled",
       "pack": 12,
       "packLabel": "12/5.5oz",
@@ -6608,7 +6608,7 @@
     },
     {
       "id": "Storck:117431c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Mamba Med Bag - Tropics",
       "pack": 12,
       "packLabel": "12/7.05oz",
@@ -6618,7 +6618,7 @@
     },
     {
       "id": "Storck:118339c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Mamba Sticks - Berrytasty",
       "pack": 144,
       "packLabel": "6 boxes x 24 (144 total) 2.8oz",
@@ -6628,7 +6628,7 @@
     },
     {
       "id": "Storck:118643c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Mamba Club SUB",
       "pack": 6,
       "packLabel": "6/30oz",
@@ -6638,7 +6638,7 @@
     },
     {
       "id": "Storck:118759c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Mamba Med Bag - Berrytasty",
       "pack": 12,
       "packLabel": "12/7.05oz",
@@ -6648,7 +6648,7 @@
     },
     {
       "id": "Storck:121452c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Werther's Med Bag - Choc Cov'd",
       "pack": 12,
       "packLabel": "12/4.51oz",
@@ -6658,7 +6658,7 @@
     },
     {
       "id": "Storck:138290c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Werther's Popcorn- Orig",
       "pack": 10,
       "packLabel": "10/5.29oz",
@@ -6668,7 +6668,7 @@
     },
     {
       "id": "Storck:138573c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Werther's Popcorn- Salted Crml",
       "pack": 6,
       "packLabel": "6/5.29oz",
@@ -6678,7 +6678,7 @@
     },
     {
       "id": "Storck:333220c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Werther's Med Bag Clip Strip - S/F Hard",
       "pack": 24,
       "packLabel": "24/2.75oz",
@@ -6688,7 +6688,7 @@
     },
     {
       "id": "Storck:334111c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Werther's Club Bag - Orig SUB",
       "pack": 6,
       "packLabel": "6/30oz",
@@ -6698,7 +6698,7 @@
     },
     {
       "id": "Storck:335620c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Werther's Med Bag - Coffee",
       "pack": 12,
       "packLabel": "12/5.5oz",
@@ -6708,7 +6708,7 @@
     },
     {
       "id": "Storck:391534c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Riesen SS SUB",
       "pack": 6,
       "packLabel": "6/12oz",
@@ -6718,7 +6718,7 @@
     },
     {
       "id": "Storck:391596c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Riesen Med Bag - Espresso",
       "pack": 12,
       "packLabel": "12/5.5oz",
@@ -6728,7 +6728,7 @@
     },
     {
       "id": "Storck:398052c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Riesen Club Bag - SUB",
       "pack": 6,
       "packLabel": "6/30oz",
@@ -6738,7 +6738,7 @@
     },
     {
       "id": "Storck:398106c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Riesen Med Bag",
       "pack": 12,
       "packLabel": "12/5.5oz",
@@ -6748,7 +6748,7 @@
     },
     {
       "id": "Storck:399554c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Werther's Med Bag - Hard",
       "pack": 12,
       "packLabel": "12/5.5oz",
@@ -6758,7 +6758,7 @@
     },
     {
       "id": "Storck:460551c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Werther's Club Bag - Caramel Filled",
       "pack": 4,
       "packLabel": "4/27oz",
@@ -6768,7 +6768,7 @@
     },
     {
       "id": "Storck:490190c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Werther's Med Bag - Crmy Crml Filled",
       "pack": 12,
       "packLabel": "12/5.5oz",
@@ -6778,7 +6778,7 @@
     },
     {
       "id": "Storck:531664c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Werther's Med Bag - Salted Creme Soft",
       "pack": 12,
       "packLabel": "12/4.51oz",
@@ -6788,7 +6788,7 @@
     },
     {
       "id": "Storck:531671c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Werther's Club Bag - Soft",
       "pack": 4,
       "packLabel": "4/25oz",
@@ -6798,7 +6798,7 @@
     },
     {
       "id": "Storck:763034c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Toffifay 15pc Box",
       "pack": 10,
       "packLabel": "2 boxes x 5 (10 total) 4.4oz",
@@ -6808,7 +6808,7 @@
     },
     {
       "id": "Storck:763522c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Werther's  Med Bag - S/F Coffee",
       "pack": 12,
       "packLabel": "12/2.75oz",
@@ -6818,7 +6818,7 @@
     },
     {
       "id": "Storck:763560c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Werther's S/F Hard Mini's Flip Box",
       "pack": 48,
       "packLabel": "4 boxes x 12 (48 total) 1.48oz",
@@ -6828,7 +6828,7 @@
     },
     {
       "id": "Storck:831498c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Werther's Med Bag - S/F Hard",
       "pack": 12,
       "packLabel": "12/2.75oz",
@@ -6838,7 +6838,7 @@
     },
     {
       "id": "Storck:z061789c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "WO/Riesen Med Bag Mixed Shipper",
       "pack": 1,
       "packLabel": null,
@@ -6848,7 +6848,7 @@
     },
     {
       "id": "Storck:z061840c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Mamba Med Bag Mixed Shipper",
       "pack": 1,
       "packLabel": null,
@@ -6858,7 +6858,7 @@
     },
     {
       "id": "Storck:z061871c",
-      "brand": "Storck USA",
+      "brand": "Storck",
       "name": "Werther's Popcorn Shipper - Orig (EDLP)",
       "pack": 48,
       "packLabel": "48/5.29oz",
@@ -7158,7 +7158,7 @@
     },
     {
       "id": "T&G:630-108",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Sanded Gummi Rings - Peach",
       "pack": 4,
       "packLabel": "4/4.5lbs",
@@ -7168,7 +7168,7 @@
     },
     {
       "id": "T&G:630-126",
-      "brand": "Albanese Confectionery Group, Inc.",
+      "brand": "Albanese",
       "name": "Sanded Gummi Rings - Apple",
       "pack": 4,
       "packLabel": "4/4.5lbs",
@@ -7688,7 +7688,7 @@
     },
     {
       "id": "TX:TX6Salt",
-      "brand": "Texas Roasting Company LLC.",
+      "brand": "TXRC",
       "name": "TX IS Pnut Sm Bag - Salted",
       "pack": 6,
       "packLabel": "6/6oz",
@@ -7698,7 +7698,7 @@
     },
     {
       "id": "TX:TX6Saltc",
-      "brand": "Texas Roasting Company LLC.",
+      "brand": "TXRC",
       "name": "TX IS Pnut Sm Bag - Salted",
       "pack": 24,
       "packLabel": "24/6oz",
@@ -7708,7 +7708,7 @@
     },
     {
       "id": "TX:TX6Unsalt",
-      "brand": "Texas Roasting Company LLC.",
+      "brand": "TXRC",
       "name": "TX IS Pnut Sm Bag - Unsalted",
       "pack": 6,
       "packLabel": "6/6oz",
@@ -7718,7 +7718,7 @@
     },
     {
       "id": "TX:TX6Unsaltc",
-      "brand": "Texas Roasting Company LLC.",
+      "brand": "TXRC",
       "name": "TX IS Pnut Sm Bag - Unsalted",
       "pack": 24,
       "packLabel": "24/6oz",
@@ -7728,7 +7728,7 @@
     },
     {
       "id": "TX:TXSltd-16c",
-      "brand": "Texas Roasting Company LLC.",
+      "brand": "TXRC",
       "name": "TX Lg In-Shell Peanut - Salted",
       "pack": 12,
       "packLabel": "12/16oz",
@@ -7738,7 +7738,7 @@
     },
     {
       "id": "TX:TXUnsltd-16c",
-      "brand": "Texas Roasting Company LLC.",
+      "brand": "TXRC",
       "name": "TX Lg In-Shell Peanut - Unsalted",
       "pack": 12,
       "packLabel": "12/16oz",
