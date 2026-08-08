@@ -66,8 +66,8 @@ router.post('/', (req, res) => {
 // (Stock corrections here are for fixing mistakes — normal stock changes
 // should happen via orders.)
 router.patch('/:id', (req, res) => {
-  const { stock, name, brand, pack, active } = req.body;
-  if (stock === undefined && name === undefined && brand === undefined && pack === undefined && active === undefined) {
+  const { stock, name, brand, pack, price, active } = req.body;
+  if (stock === undefined && name === undefined && brand === undefined && pack === undefined && price === undefined && active === undefined) {
     return res.status(400).json({ error: 'At least one field must be provided' });
   }
   if (stock !== undefined && Number.isNaN(Number(stock))) {
@@ -75,6 +75,9 @@ router.patch('/:id', (req, res) => {
   }
   if (pack !== undefined && (Number.isNaN(Number(pack)) || Number(pack) < 1)) {
     return res.status(400).json({ error: 'pack must be a number of 1 or more' });
+  }
+  if (price !== undefined && (Number.isNaN(Number(price)) || Number(price) < 0)) {
+    return res.status(400).json({ error: 'price must be a number of 0 or more' });
   }
   if (name !== undefined && !name.trim()) {
     return res.status(400).json({ error: 'name cannot be empty' });
@@ -92,6 +95,7 @@ router.patch('/:id', (req, res) => {
   if (name !== undefined) { updates.push('name = ?'); params.push(name.trim()); }
   if (brand !== undefined) { updates.push('brand = ?'); params.push(brand.trim()); }
   if (pack !== undefined) { updates.push('pack = ?'); params.push(Number(pack)); }
+  if (price !== undefined) { updates.push('price = ?'); params.push(Number(price)); }
   if (active !== undefined) { updates.push('active = ?'); params.push(active ? 1 : 0); }
   params.push(req.params.id);
 
@@ -103,6 +107,7 @@ router.patch('/:id', (req, res) => {
   if (name !== undefined) result.name = name.trim();
   if (brand !== undefined) result.brand = brand.trim();
   if (pack !== undefined) result.pack = Number(pack);
+  if (price !== undefined) result.price = Number(price);
   if (active !== undefined) result.active = active;
   res.json(result);
 });
