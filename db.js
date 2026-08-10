@@ -27,6 +27,7 @@ db.exec(`
     price REAL NOT NULL DEFAULT 0,   -- price per single "each", not per case
     pack INTEGER NOT NULL DEFAULT 1, -- number of "eaches" per case/pack ordered
     packLabel TEXT,                   -- display string, e.g. '12/7.5oz'
+    imageUrl TEXT,                    -- optional product photo URL
     active INTEGER NOT NULL DEFAULT 1
   );
 
@@ -65,6 +66,9 @@ if (!itemColumns.includes('pack')) {
 }
 if (!itemColumns.includes('packLabel')) {
   db.exec('ALTER TABLE items ADD COLUMN packLabel TEXT');
+}
+if (!itemColumns.includes('imageUrl')) {
+  db.exec('ALTER TABLE items ADD COLUMN imageUrl TEXT');
 }
 const customerColumns = db.prepare("PRAGMA table_info(customers)").all().map(c => c.name);
 if (!customerColumns.includes('active')) {

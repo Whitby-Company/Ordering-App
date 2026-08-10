@@ -10,7 +10,7 @@ const router = express.Router();
 // Optional query params: ?brand=Oberto  ?lowStockMax=5  ?includeInactive=true
 router.get('/', (req, res) => {
   const { brand, lowStockMax, includeInactive } = req.query;
-  let sql = 'SELECT id, brand, name, stock, price, pack, packLabel, active FROM items WHERE 1=1';
+  let sql = 'SELECT id, brand, name, stock, price, pack, packLabel, imageUrl, active FROM items WHERE 1=1';
   const params = [];
 
   if (includeInactive !== 'true') {
@@ -66,8 +66,8 @@ router.post('/', (req, res) => {
 // (Stock corrections here are for fixing mistakes — normal stock changes
 // should happen via orders.)
 router.patch('/:id', (req, res) => {
-  const { stock, name, brand, pack, packLabel, price, active } = req.body;
-  if (stock === undefined && name === undefined && brand === undefined && pack === undefined && packLabel === undefined && price === undefined && active === undefined) {
+  const { stock, name, brand, pack, packLabel, imageUrl, price, active } = req.body;
+  if (stock === undefined && name === undefined && brand === undefined && pack === undefined && packLabel === undefined && imageUrl === undefined && price === undefined && active === undefined) {
     return res.status(400).json({ error: 'At least one field must be provided' });
   }
   if (stock !== undefined && Number.isNaN(Number(stock))) {
@@ -96,6 +96,7 @@ router.patch('/:id', (req, res) => {
   if (brand !== undefined) { updates.push('brand = ?'); params.push(brand.trim()); }
   if (pack !== undefined) { updates.push('pack = ?'); params.push(Number(pack)); }
   if (packLabel !== undefined) { updates.push('packLabel = ?'); params.push(packLabel.trim() || null); }
+  if (imageUrl !== undefined) { updates.push('imageUrl = ?'); params.push(imageUrl.trim() || null); }
   if (price !== undefined) { updates.push('price = ?'); params.push(Number(price)); }
   if (active !== undefined) { updates.push('active = ?'); params.push(active ? 1 : 0); }
   params.push(req.params.id);
@@ -109,6 +110,7 @@ router.patch('/:id', (req, res) => {
   if (brand !== undefined) result.brand = brand.trim();
   if (pack !== undefined) result.pack = Number(pack);
   if (packLabel !== undefined) result.packLabel = packLabel.trim() || null;
+  if (imageUrl !== undefined) result.imageUrl = imageUrl.trim() || null;
   if (price !== undefined) result.price = Number(price);
   if (active !== undefined) result.active = active;
   res.json(result);
