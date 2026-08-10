@@ -1,4 +1,7 @@
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
 const db = require('../db');
 
 const router = express.Router();
@@ -182,6 +185,40 @@ router.post('/bulk-update', (req, res) => {
   run();
 
   res.json({ updated, notFound, totalRows: updates.length });
+});
+
+// POST /api/items/:id/image — upload a product photo directly (base64),
+// save it to the persistent disk, and set the item's imageUrl to point at it.
+// body: { imageData: '<base64, with or without a data: prefix>', ext: 'png' }
+router.post('/:id/image', (req, res) => {
+  const { imageData, ext } = req.body;
+  if (!imageData) return res.status(400).json({ error: 'imageData is required' });
+
+  const item = db.prepare('SELECT id FROM items WHERE id = ?').get(req.params.id);
+  if (!item) return res.status(404).json({ error: 'Item not found' });
+
+  const safeExt = (ext || 'png').replace(/[^a-z0-9]/gi, '').toLowerCase() || 'png';
+  const base64 = imageData.includes(',') ? imageData.split(',').pop() : imageData;
+  let buffer;
+  try {
+    buffer = Buffer.from(base64, 'base64');
+    if (buffer.length === 0) throw new Error('empty');
+  } catch (err) {
+    return res.status(400).json({ error: 'imageData could not be decoded as base64' });
+  }
+  if (buffer.length > 8 * 1024 * 1024) {
+    return res.status(400).json({ error: 'Image too large (max 8MB)' });
+  }
+
+  const safeId = req.params.id.replace(/[^a-z0-9]/gi, '_');
+  const filename = `${safeId}-${crypto.randomBytes(4).toString('hex')}.${safeExt}`;
+  const imagesDir = req.app.get('imagesDir');
+  fs.writeFileSync(path.join(imagesDir, filename), buffer);
+
+  const imageUrl = `${req.protocol}://${req.get('host')}/images/${filename}`;
+  db.prepare('UPDATE items SET imageUrl = ? WHERE id = ?').run(imageUrl, req.params.id);
+
+  res.json({ id: req.params.id, imageUrl });
 });
 
 module.exports = router;
