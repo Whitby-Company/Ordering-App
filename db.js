@@ -47,6 +47,11 @@ db.exec(`
     FOREIGN KEY (order_id) REFERENCES orders(id),
     FOREIGN KEY (item_id) REFERENCES items(id)
   );
+
+  CREATE TABLE IF NOT EXISTS brand_colors (
+    brand TEXT PRIMARY KEY,
+    color TEXT NOT NULL          -- hex color, e.g. '#2B5D50'
+  );
 `);
 
 // Migration: older deployments created these tables before the `price`
