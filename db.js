@@ -52,6 +52,11 @@ db.exec(`
     brand TEXT PRIMARY KEY,
     color TEXT NOT NULL          -- hex color, e.g. '#2B5D50'
   );
+
+  CREATE TABLE IF NOT EXISTS print_order (
+    item_id TEXT PRIMARY KEY,    -- SKU
+    position INTEGER NOT NULL    -- 0-based sort position for printouts
+  );
 `);
 
 // Migration: older deployments created these tables before the `price`
