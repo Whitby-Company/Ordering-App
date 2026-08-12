@@ -215,7 +215,11 @@ router.post('/:id/image', (req, res) => {
   const imagesDir = req.app.get('imagesDir');
   fs.writeFileSync(path.join(imagesDir, filename), buffer);
 
-  const imageUrl = `${req.protocol}://${req.get('host')}/images/${filename}`;
+  // Render (and most hosts) terminate TLS at a proxy and forward as http
+  // internally, so req.protocol is 'http'. Honor X-Forwarded-Proto so the
+  // stored URL is https and won't be blocked as mixed content on an https page.
+  const proto = (req.get('x-forwarded-proto') || req.protocol).split(',')[0].trim();
+  const imageUrl = `${proto}://${req.get('host')}/images/${filename}`;
   db.prepare('UPDATE items SET imageUrl = ? WHERE id = ?').run(imageUrl, req.params.id);
 
   res.json({ id: req.params.id, imageUrl });
