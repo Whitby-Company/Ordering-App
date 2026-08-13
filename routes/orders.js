@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../db');
-const { buildIIF } = require('../iif');
+const { buildIIF, buildIIFExperimental } = require('../iif');
 
 const router = express.Router();
 
@@ -71,9 +71,11 @@ router.get('/:id/iif', (req, res) => {
   if (!id) return res.status(400).json({ error: 'Invalid order id' });
   const orders = fetchOrdersForIIF([id]);
   if (orders.length === 0) return res.status(404).json({ error: 'Order not found' });
-  const iif = buildIIF(orders);
+  const experimental = req.query.experimental === '1' || req.query.experimental === 'true';
+  const iif = experimental ? buildIIFExperimental(orders) : buildIIF(orders);
+  const suffix = experimental ? '-experimental' : '';
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="order-${id}.iif"`);
+  res.setHeader('Content-Disposition', `attachment; filename="order-${id}${suffix}.iif"`);
   res.send(iif);
 });
 

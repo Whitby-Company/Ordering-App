@@ -135,4 +135,57 @@ function buildIIF(orders, options = {}) {
   return lines.join('\r\n') + '\r\n';
 }
 
-module.exports = { buildIIF, mapCustomer, buildPONumber, formatIIFDate, lineAmount, casePrice };
+// EXPERIMENTAL variant: attempts to get QuickBooks to split the CS and EACH
+// columns by sending the quantity in CASES and adding a unit-of-measure hint
+// column on the SPL lines. IIF has no officially-documented per-line U/M
+// column, so this is a best-effort test — QuickBooks may honor it, ignore the
+// extra column, or reject the file. The regular buildIIF() remains the safe
+// default. We send cases + case price here (so if QB reads it straight, the
+// CS column shows the case count); the U/M column is set to "CS".
+function buildIIFExperimental(orders, options = {}) {
+  const arAccount = options.arAccount || 'Accounts Receivable';
+  const incomeAccount = options.incomeAccount || 'Sales';
+  const caseUnit = options.caseUnit || 'CS';
+
+  const lines = [];
+  // SPL header includes an extra U/M column after QNTY/PRICE. QuickBooks
+  // versions that support unit of measure on import look for this.
+  lines.push(['!TRNS', 'TRNSTYPE', 'DATE', 'ACCNT', 'NAME', 'AMOUNT', 'DOCNUM', 'PONUM', 'MEMO'].join('\t'));
+  lines.push(['!SPL', 'TRNSTYPE', 'DATE', 'ACCNT', 'NAME', 'AMOUNT', 'INVITEM', 'QNTY', 'PRICE', 'UOM', 'MEMO'].join('\t'));
+  lines.push('!ENDTRNS');
+
+  for (const order of orders) {
+    const { qbName, memo } = mapCustomer(order.customer);
+    const date = formatIIFDate(order.deliveryDate);
+    const poNumber = buildPONumber(order);
+    const noteParts = [];
+    if (memo) noteParts.push(memo);
+    if (order.notes) noteParts.push(order.notes);
+    const trnsMemo = clean(noteParts.join(' — '));
+
+    const orderLines = Array.isArray(order.lines) ? order.lines : [];
+    const total = round2(orderLines.reduce((s, l) => s + lineAmount(l), 0));
+
+    lines.push([
+      'TRNS', 'INVOICE', date, arAccount, clean(qbName), total.toFixed(2), '', clean(poNumber), trnsMemo,
+    ].join('\t'));
+
+    // Send CASES as the quantity with the CASE price, plus a U/M column = "CS".
+    // The line AMOUNT is still the true line total so it balances regardless.
+    for (const l of orderLines) {
+      const amt = round2(lineAmount(l));
+      const cases = Number(l.qty) || 0;
+      const cPrice = round2(casePrice(l));
+      lines.push([
+        'SPL', 'INVOICE', date, incomeAccount, '', (-amt).toFixed(2),
+        clean(l.id), (-cases).toString(), cPrice.toFixed(2), caseUnit, clean(l.name),
+      ].join('\t'));
+    }
+
+    lines.push('ENDTRNS');
+  }
+
+  return lines.join('\r\n') + '\r\n';
+}
+
+module.exports = { buildIIF, buildIIFExperimental, mapCustomer, buildPONumber, formatIIFDate, lineAmount, casePrice };
