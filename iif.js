@@ -44,17 +44,37 @@ function formatIIFDate(isoDate) {
   return `${m[2]}/${m[3]}/${m[1]}`;
 }
 
-// Map an app customer name to { qbName, memo } for QuickBooks.
-// "Times Kahala #2" -> { qbName: 'Times', memo: 'Kahala #2' }
-// "Times"            -> { qbName: 'Times', memo: '' }
-// anything else      -> { qbName: <unchanged>, memo: '' }
+// Map an app customer name to { qbName, memo, storeNum } for QuickBooks.
+// "Times Kahala #2" -> { qbName: 'Times', memo: 'Kahala #2', storeNum: '2' }
+// "Times"            -> { qbName: 'Times', memo: '', storeNum: '' }
+// anything else      -> { qbName: <unchanged>, memo: '', storeNum: '' }
 function mapCustomer(appCustomerName) {
   const name = String(appCustomerName || '').trim();
-  if (name === 'Times') return { qbName: 'Times', memo: '' };
+  if (name === 'Times') return { qbName: 'Times', memo: '', storeNum: '' };
   if (/^Times\s+/i.test(name)) {
-    return { qbName: 'Times', memo: name.replace(/^Times\s+/i, '').trim() };
+    const store = name.replace(/^Times\s+/i, '').trim();
+    const numMatch = store.match(/#\s*(\d+)/);
+    return { qbName: 'Times', memo: store, storeNum: numMatch ? numMatch[1] : '' };
   }
-  return { qbName: name, memo: '' };
+  return { qbName: name, memo: '', storeNum: '' };
+}
+
+// Build the PO number from the order-placed date and the customer.
+// Date format matches the user's convention: month + day + 2-digit year with
+// no leading zeros (Aug 12 2026 -> "81226"). Times orders append "TMS-<store#>"
+// (e.g. "81226TMS-18"); other customers get just the date.
+function buildPONumber(order) {
+  const m = String(order.submittedAt || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  let datePart = '';
+  if (m) {
+    const yy = m[1].slice(2);
+    const mm = String(parseInt(m[2], 10)); // no leading zero
+    const dd = String(parseInt(m[3], 10)); // no leading zero
+    datePart = `${mm}${dd}${yy}`;
+  }
+  const { qbName, storeNum } = mapCustomer(order.customer);
+  if (qbName === 'Times' && storeNum) return `${datePart}TMS-${storeNum}`;
+  return datePart;
 }
 
 // IIF fields are tab-separated, so strip tabs/newlines from any value.
@@ -70,13 +90,14 @@ function buildIIF(orders, options = {}) {
 
   const lines = [];
   // Header rows define the columns for each record type.
-  lines.push(['!TRNS', 'TRNSTYPE', 'DATE', 'ACCNT', 'NAME', 'AMOUNT', 'MEMO'].join('\t'));
+  lines.push(['!TRNS', 'TRNSTYPE', 'DATE', 'ACCNT', 'NAME', 'AMOUNT', 'DOCNUM', 'PONUM', 'MEMO'].join('\t'));
   lines.push(['!SPL', 'TRNSTYPE', 'DATE', 'ACCNT', 'NAME', 'AMOUNT', 'INVITEM', 'QNTY', 'PRICE', 'MEMO'].join('\t'));
   lines.push('!ENDTRNS');
 
   for (const order of orders) {
     const { qbName, memo } = mapCustomer(order.customer);
     const date = formatIIFDate(order.deliveryDate);
+    const poNumber = buildPONumber(order);
     // Combine the store memo with any order notes for context on the invoice.
     const noteParts = [];
     if (memo) noteParts.push(memo);
@@ -86,19 +107,24 @@ function buildIIF(orders, options = {}) {
     const orderLines = Array.isArray(order.lines) ? order.lines : [];
     const total = round2(orderLines.reduce((s, l) => s + lineAmount(l), 0));
 
-    // TRNS: the A/R side, positive total.
+    // TRNS: the A/R side, positive total. DOCNUM left blank so QuickBooks
+    // assigns the next invoice number; PONUM carries our generated PO.
     lines.push([
-      'TRNS', 'INVOICE', date, arAccount, clean(qbName), total.toFixed(2), trnsMemo,
+      'TRNS', 'INVOICE', date, arAccount, clean(qbName), total.toFixed(2), '', clean(poNumber), trnsMemo,
     ].join('\t'));
 
-    // One SPL per line item: income side, negative amount and negative qty.
+    // One SPL per line item: income side, negative amount. Quantities are sent
+    // in EACHES (cases × pack) with the per-each price, because QuickBooks reads
+    // IIF quantities in the item's base unit (each). This makes the CS/EACHES
+    // columns and the "each" unit of measure come out correct.
     for (const l of orderLines) {
       const amt = round2(lineAmount(l));
-      const qty = Number(l.qty) || 0;
-      const price = round2(casePrice(l));
+      const pack = Number(l.pack) || 1;
+      const eaches = (Number(l.qty) || 0) * pack;
+      const eachPrice = round2(Number(l.price) || 0);
       lines.push([
         'SPL', 'INVOICE', date, incomeAccount, '', (-amt).toFixed(2),
-        clean(l.id), (-qty).toString(), price.toFixed(2), clean(l.name),
+        clean(l.id), (-eaches).toString(), eachPrice.toFixed(2), clean(l.name),
       ].join('\t'));
     }
 
@@ -109,4 +135,4 @@ function buildIIF(orders, options = {}) {
   return lines.join('\r\n') + '\r\n';
 }
 
-module.exports = { buildIIF, mapCustomer, formatIIFDate, lineAmount, casePrice };
+module.exports = { buildIIF, mapCustomer, buildPONumber, formatIIFDate, lineAmount, casePrice };
