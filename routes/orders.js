@@ -1,5 +1,6 @@
 const express = require('express');
 const db = require('../db');
+const { buildIIF } = require('../iif');
 
 const router = express.Router();
 
@@ -30,9 +31,56 @@ router.get('/', (req, res) => {
   res.json(withLines);
 });
 
+// GET /api/orders/:id/iif — download a QuickBooks Desktop IIF invoice file
+// for a single order. GET /api/orders/iif?ids=1,2,3 exports several at once.
+function fetchOrdersForIIF(ids) {
+  const lineStmt = db.prepare(
+    `SELECT ol.item_id as id, i.name, i.brand, i.price, i.pack, ol.qty
+     FROM order_lines ol JOIN items i ON i.id = ol.item_id
+     WHERE ol.order_id = ?`
+  );
+  const orderStmt = db.prepare(
+    `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
+            c.name as customer
+     FROM orders o JOIN customers c ON c.id = o.customer_id
+     WHERE o.id = ?`
+  );
+  const out = [];
+  for (const id of ids) {
+    const order = orderStmt.get(id);
+    if (order) out.push({ ...order, lines: lineStmt.all(id) });
+  }
+  return out;
+}
+
+router.get('/iif', (req, res) => {
+  const raw = String(req.query.ids || '').trim();
+  const ids = raw ? raw.split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean) : [];
+  if (ids.length === 0) return res.status(400).json({ error: 'Provide ?ids=1,2,3' });
+  const orders = fetchOrdersForIIF(ids);
+  if (orders.length === 0) return res.status(404).json({ error: 'No matching orders found' });
+  const iif = buildIIF(orders);
+  const filename = orders.length === 1 ? `order-${orders[0].id}.iif` : `orders-${orders.length}.iif`;
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(iif);
+});
+
+router.get('/:id/iif', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!id) return res.status(400).json({ error: 'Invalid order id' });
+  const orders = fetchOrdersForIIF([id]);
+  if (orders.length === 0) return res.status(404).json({ error: 'Order not found' });
+  const iif = buildIIF(orders);
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="order-${id}.iif"`);
+  res.send(iif);
+});
+
 // POST /api/orders — create an order and decrement stock atomically
 // body: { customerId, deliveryDate, lines: [{ itemId, qty }, ...] }
 router.post('/', (req, res) => {
+
   const { customerId, deliveryDate, lines, notes } = req.body;
 
   if (!customerId || !deliveryDate || !Array.isArray(lines) || lines.length === 0) {
