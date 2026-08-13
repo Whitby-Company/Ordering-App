@@ -7,7 +7,7 @@ const router = express.Router();
 router.get('/', (req, res) => {
   const orders = db
     .prepare(
-      `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt,
+      `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
               c.id as customerId, c.name as customer
        FROM orders o
        JOIN customers c ON c.id = o.customer_id
@@ -33,7 +33,7 @@ router.get('/', (req, res) => {
 // POST /api/orders — create an order and decrement stock atomically
 // body: { customerId, deliveryDate, lines: [{ itemId, qty }, ...] }
 router.post('/', (req, res) => {
-  const { customerId, deliveryDate, lines } = req.body;
+  const { customerId, deliveryDate, lines, notes } = req.body;
 
   if (!customerId || !deliveryDate || !Array.isArray(lines) || lines.length === 0) {
     return res.status(400).json({ error: 'customerId, deliveryDate, and at least one line are required' });
@@ -59,15 +59,16 @@ router.post('/', (req, res) => {
   }
 
   const insertOrder = db.prepare(
-    'INSERT INTO orders (customer_id, delivery_date, submitted_at) VALUES (?, ?, ?)'
+    'INSERT INTO orders (customer_id, delivery_date, submitted_at, notes) VALUES (?, ?, ?, ?)'
   );
   const insertLine = db.prepare('INSERT INTO order_lines (order_id, item_id, qty) VALUES (?, ?, ?)');
   const decrementStock = db.prepare('UPDATE items SET stock = stock - ? WHERE id = ?');
 
   const submittedAt = new Date().toISOString();
+  const cleanNotes = (typeof notes === 'string' && notes.trim()) ? notes.trim() : null;
 
   const createOrder = db.transaction(() => {
-    const orderInfo = insertOrder.run(customerId, deliveryDate, submittedAt);
+    const orderInfo = insertOrder.run(customerId, deliveryDate, submittedAt, cleanNotes);
     const orderId = orderInfo.lastInsertRowid;
     for (const { item, qty } of resolvedLines) {
       insertLine.run(orderId, item.id, qty);
@@ -84,6 +85,7 @@ router.post('/', (req, res) => {
     customerId,
     deliveryDate,
     submittedAt,
+    notes: cleanNotes,
     lines: resolvedLines.map(({ item, qty }) => ({ id: item.id, name: item.name, brand: item.brand, price: item.price, pack: item.pack, qty })),
   });
 });
@@ -95,7 +97,7 @@ router.post('/', (req, res) => {
 // body: { customerId, deliveryDate, lines: [{ itemId, qty }, ...] }
 router.patch('/:id', (req, res) => {
   const orderId = req.params.id;
-  const { customerId, deliveryDate, lines } = req.body;
+  const { customerId, deliveryDate, lines, notes } = req.body;
 
   if (!customerId || !deliveryDate || !Array.isArray(lines) || lines.length === 0) {
     return res.status(400).json({ error: 'customerId, deliveryDate, and at least one line are required' });
@@ -139,8 +141,9 @@ router.patch('/:id', (req, res) => {
   const adjustStock = db.prepare('UPDATE items SET stock = stock + ? WHERE id = ?');
   const deleteLines = db.prepare('DELETE FROM order_lines WHERE order_id = ?');
   const insertLine = db.prepare('INSERT INTO order_lines (order_id, item_id, qty) VALUES (?, ?, ?)');
-  const updateOrder = db.prepare('UPDATE orders SET customer_id = ?, delivery_date = ? WHERE id = ?');
+  const updateOrder = db.prepare('UPDATE orders SET customer_id = ?, delivery_date = ?, notes = ? WHERE id = ?');
 
+  const cleanNotes = (typeof notes === 'string' && notes.trim()) ? notes.trim() : null;
   const run = db.transaction(() => {
     const touchedItems = new Set([...Object.keys(oldQtyByItem), ...Object.keys(newQtyByItem)]);
     for (const itemId of touchedItems) {
@@ -151,12 +154,12 @@ router.patch('/:id', (req, res) => {
     }
     deleteLines.run(orderId);
     for (const { item, qty } of resolvedLines) insertLine.run(orderId, item.id, qty);
-    updateOrder.run(customerId, deliveryDate, orderId);
+    updateOrder.run(customerId, deliveryDate, cleanNotes, orderId);
   });
   run();
 
   const updated = db.prepare(
-    `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt,
+    `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
             c.id as customerId, c.name as customer
      FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = ?`
   ).get(orderId);

@@ -36,6 +36,7 @@ db.exec(`
     customer_id INTEGER NOT NULL REFERENCES customers(id),
     delivery_date TEXT NOT NULL,   -- ISO date, e.g. '2026-08-14'
     submitted_at TEXT NOT NULL,    -- ISO datetime
+    notes TEXT,                    -- optional order notes / special instructions
     FOREIGN KEY (customer_id) REFERENCES customers(id)
   );
 
@@ -83,6 +84,10 @@ if (!itemColumns.includes('imageUrl')) {
 const customerColumns = db.prepare("PRAGMA table_info(customers)").all().map(c => c.name);
 if (!customerColumns.includes('active')) {
   db.exec('ALTER TABLE customers ADD COLUMN active INTEGER NOT NULL DEFAULT 1');
+}
+const orderColumns = db.prepare("PRAGMA table_info(orders)").all().map(c => c.name);
+if (!orderColumns.includes('notes')) {
+  db.exec('ALTER TABLE orders ADD COLUMN notes TEXT');
 }
 
 module.exports = db;
