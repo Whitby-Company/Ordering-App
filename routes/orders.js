@@ -9,6 +9,7 @@ router.get('/', (req, res) => {
   const orders = db
     .prepare(
       `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
+              o.processed, o.processed_at as processedAt,
               c.id as customerId, c.name as customer
        FROM orders o
        JOIN customers c ON c.id = o.customer_id
@@ -41,6 +42,7 @@ function fetchOrdersForIIF(ids) {
   );
   const orderStmt = db.prepare(
     `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
+              o.processed, o.processed_at as processedAt,
             c.name as customer
      FROM orders o JOIN customers c ON c.id = o.customer_id
      WHERE o.id = ?`
@@ -77,6 +79,27 @@ router.get('/:id/iif', (req, res) => {
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="order-${id}${suffix}.iif"`);
   res.send(iif);
+});
+
+// PATCH /api/orders/:id/processed — mark an order processed (entered into
+// QuickBooks) or un-processed. body: { processed: true|false }
+router.patch('/:id/processed', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!id) return res.status(400).json({ error: 'Invalid order id' });
+  const order = db.prepare('SELECT id FROM orders WHERE id = ?').get(id);
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+
+  const processed = req.body.processed ? 1 : 0;
+  const processedAt = processed ? new Date().toISOString() : null;
+  db.prepare('UPDATE orders SET processed = ?, processed_at = ? WHERE id = ?').run(processed, processedAt, id);
+
+  const updated = db.prepare(
+    `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
+            o.processed, o.processed_at as processedAt,
+            c.id as customerId, c.name as customer
+     FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = ?`
+  ).get(id);
+  res.json(updated);
 });
 
 // POST /api/orders — create an order and decrement stock atomically
@@ -210,6 +233,7 @@ router.patch('/:id', (req, res) => {
 
   const updated = db.prepare(
     `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
+              o.processed, o.processed_at as processedAt,
             c.id as customerId, c.name as customer
      FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = ?`
   ).get(orderId);

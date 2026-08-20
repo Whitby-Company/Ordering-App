@@ -37,6 +37,8 @@ db.exec(`
     delivery_date TEXT NOT NULL,   -- ISO date, e.g. '2026-08-14'
     submitted_at TEXT NOT NULL,    -- ISO datetime
     notes TEXT,                    -- optional order notes / special instructions
+    processed INTEGER NOT NULL DEFAULT 0,  -- 1 once entered into QuickBooks
+    processed_at TEXT,             -- ISO datetime it was marked processed
     FOREIGN KEY (customer_id) REFERENCES customers(id)
   );
 
@@ -88,6 +90,12 @@ if (!customerColumns.includes('active')) {
 const orderColumns = db.prepare("PRAGMA table_info(orders)").all().map(c => c.name);
 if (!orderColumns.includes('notes')) {
   db.exec('ALTER TABLE orders ADD COLUMN notes TEXT');
+}
+if (!orderColumns.includes('processed')) {
+  db.exec('ALTER TABLE orders ADD COLUMN processed INTEGER NOT NULL DEFAULT 0');
+}
+if (!orderColumns.includes('processed_at')) {
+  db.exec('ALTER TABLE orders ADD COLUMN processed_at TEXT');
 }
 
 module.exports = db;
