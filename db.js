@@ -28,6 +28,7 @@ db.exec(`
     pack INTEGER NOT NULL DEFAULT 1, -- number of "eaches" per case/pack ordered
     packLabel TEXT,                   -- display string, e.g. '12/7.5oz'
     imageUrl TEXT,                    -- optional product photo URL
+    upc TEXT,                         -- optional UPC / barcode for check-in
     active INTEGER NOT NULL DEFAULT 1
   );
 
@@ -82,6 +83,9 @@ if (!itemColumns.includes('packLabel')) {
 }
 if (!itemColumns.includes('imageUrl')) {
   db.exec('ALTER TABLE items ADD COLUMN imageUrl TEXT');
+}
+if (!itemColumns.includes('upc')) {
+  db.exec('ALTER TABLE items ADD COLUMN upc TEXT');
 }
 const customerColumns = db.prepare("PRAGMA table_info(customers)").all().map(c => c.name);
 if (!customerColumns.includes('active')) {
