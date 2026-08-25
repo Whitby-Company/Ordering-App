@@ -122,8 +122,11 @@ router.post('/', (req, res) => {
     const item = getItem.get(line.itemId);
     if (!item) return res.status(404).json({ error: `Item "${line.itemId}" not found` });
     const qty = Number(line.qty);
-    if (!qty || qty <= 0) return res.status(400).json({ error: `Invalid quantity for "${item.name}"` });
-    if (qty > item.stock) {
+    // qty 0 is allowed: it puts an item on the order (e.g. so its UPC prints
+    // for check-in) without ordering any or touching stock. Reject negatives
+    // and non-numbers only.
+    if (!Number.isFinite(qty) || qty < 0) return res.status(400).json({ error: `Invalid quantity for "${item.name}"` });
+    if (qty > 0 && qty > item.stock) {
       return res.status(409).json({
         error: `Not enough stock for "${item.name}" — ${item.stock} available, ${qty} requested`,
       });
@@ -193,7 +196,9 @@ router.patch('/:id', (req, res) => {
     const item = getItem.get(line.itemId);
     if (!item) return res.status(404).json({ error: `Item "${line.itemId}" not found` });
     const qty = Number(line.qty);
-    if (!qty || qty <= 0) return res.status(400).json({ error: `Invalid quantity for "${item.name}"` });
+    // qty 0 is allowed (see POST) — an item on the order with no quantity, e.g.
+    // to print its UPC for check-in. Reject negatives / non-numbers only.
+    if (!Number.isFinite(qty) || qty < 0) return res.status(400).json({ error: `Invalid quantity for "${item.name}"` });
     newQtyByItem[line.itemId] = qty;
     resolvedLines.push({ item, qty });
   }
