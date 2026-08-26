@@ -9,7 +9,7 @@ router.get('/', (req, res) => {
   const orders = db
     .prepare(
       `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
-              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy,
+              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status,
               c.id as customerId, c.name as customer
        FROM orders o
        JOIN customers c ON c.id = o.customer_id
@@ -42,7 +42,7 @@ function fetchOrdersForIIF(ids) {
   );
   const orderStmt = db.prepare(
     `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
-              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy,
+              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status,
             c.name as customer
      FROM orders o JOIN customers c ON c.id = o.customer_id
      WHERE o.id = ?`
@@ -95,7 +95,44 @@ router.patch('/:id/processed', (req, res) => {
 
   const updated = db.prepare(
     `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
-            o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy,
+            o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status,
+            c.id as customerId, c.name as customer
+     FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = ?`
+  ).get(id);
+  res.json(updated);
+});
+
+// PATCH /api/orders/:id/submit — finalize a pending order. Checks stock for
+// its lines, decrements it, and flips status to 'submitted'. No-op (409) if
+// the order isn't pending.
+router.patch('/:id/submit', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!id) return res.status(400).json({ error: 'Invalid order id' });
+  const order = db.prepare('SELECT id, status FROM orders WHERE id = ?').get(id);
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+  if (order.status !== 'pending') return res.status(409).json({ error: 'Order is not pending' });
+
+  const lines = db.prepare(
+    `SELECT ol.item_id, ol.qty, i.name, i.stock FROM order_lines ol
+     JOIN items i ON i.id = ol.item_id WHERE ol.order_id = ?`
+  ).all(id);
+  // Stock check before writing anything.
+  for (const l of lines) {
+    if (l.qty > 0 && l.qty > l.stock) {
+      return res.status(409).json({ error: `Not enough stock for "${l.name}" — ${l.stock} available, ${l.qty} requested` });
+    }
+  }
+  const decrementStock = db.prepare('UPDATE items SET stock = stock - ? WHERE id = ?');
+  const submittedAt = new Date().toISOString();
+  const run = db.transaction(() => {
+    for (const l of lines) decrementStock.run(l.qty, l.item_id);
+    db.prepare("UPDATE orders SET status = 'submitted', submitted_at = ? WHERE id = ?").run(submittedAt, id);
+  });
+  run();
+
+  const updated = db.prepare(
+    `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
+            o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status,
             c.id as customerId, c.name as customer
      FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = ?`
   ).get(id);
@@ -115,7 +152,10 @@ router.post('/', (req, res) => {
   const customer = db.prepare('SELECT id, name FROM customers WHERE id = ?').get(customerId);
   if (!customer) return res.status(404).json({ error: 'Customer not found' });
 
-  // Validate every line and check stock BEFORE writing anything.
+  const isPending = req.body.status === 'pending';
+
+  // Validate every line. For a normal (submitted) order we also check stock;
+  // a pending draft doesn't reserve stock, so we skip the stock check.
   const getItem = db.prepare('SELECT id, name, brand, stock, price, pack FROM items WHERE id = ?');
   const resolvedLines = [];
   for (const line of lines) {
@@ -126,7 +166,7 @@ router.post('/', (req, res) => {
     // for check-in) without ordering any or touching stock. Reject negatives
     // and non-numbers only.
     if (!Number.isFinite(qty) || qty < 0) return res.status(400).json({ error: `Invalid quantity for "${item.name}"` });
-    if (qty > 0 && qty > item.stock) {
+    if (!isPending && qty > 0 && qty > item.stock) {
       return res.status(409).json({
         error: `Not enough stock for "${item.name}" — ${item.stock} available, ${qty} requested`,
       });
@@ -135,7 +175,7 @@ router.post('/', (req, res) => {
   }
 
   const insertOrder = db.prepare(
-    'INSERT INTO orders (customer_id, delivery_date, submitted_at, notes, submitted_by) VALUES (?, ?, ?, ?, ?)'
+    'INSERT INTO orders (customer_id, delivery_date, submitted_at, notes, submitted_by, status) VALUES (?, ?, ?, ?, ?, ?)'
   );
   const insertLine = db.prepare('INSERT INTO order_lines (order_id, item_id, qty) VALUES (?, ?, ?)');
   const decrementStock = db.prepare('UPDATE items SET stock = stock - ? WHERE id = ?');
@@ -143,13 +183,14 @@ router.post('/', (req, res) => {
   const submittedAt = new Date().toISOString();
   const cleanNotes = (typeof notes === 'string' && notes.trim()) ? notes.trim() : null;
   const cleanSubmittedBy = (typeof req.body.submittedBy === 'string' && req.body.submittedBy.trim()) ? req.body.submittedBy.trim() : null;
+  const status = isPending ? 'pending' : 'submitted';
 
   const createOrder = db.transaction(() => {
-    const orderInfo = insertOrder.run(customerId, deliveryDate, submittedAt, cleanNotes, cleanSubmittedBy);
+    const orderInfo = insertOrder.run(customerId, deliveryDate, submittedAt, cleanNotes, cleanSubmittedBy, status);
     const orderId = orderInfo.lastInsertRowid;
     for (const { item, qty } of resolvedLines) {
       insertLine.run(orderId, item.id, qty);
-      decrementStock.run(qty, item.id);
+      if (!isPending) decrementStock.run(qty, item.id); // pending drafts don't reserve stock
     }
     return orderId;
   });
@@ -163,6 +204,7 @@ router.post('/', (req, res) => {
     deliveryDate,
     submittedAt,
     submittedBy: cleanSubmittedBy,
+    status,
     notes: cleanNotes,
     lines: resolvedLines.map(({ item, qty }) => ({ id: item.id, name: item.name, brand: item.brand, price: item.price, pack: item.pack, qty })),
   });
@@ -181,8 +223,9 @@ router.patch('/:id', (req, res) => {
     return res.status(400).json({ error: 'customerId, deliveryDate, and at least one line are required' });
   }
 
-  const order = db.prepare('SELECT id FROM orders WHERE id = ?').get(orderId);
+  const order = db.prepare('SELECT id, status FROM orders WHERE id = ?').get(orderId);
   if (!order) return res.status(404).json({ error: 'Order not found' });
+  const isPending = order.status === 'pending';
 
   const customer = db.prepare('SELECT id, name FROM customers WHERE id = ?').get(customerId);
   if (!customer) return res.status(404).json({ error: 'Customer not found' });
@@ -207,14 +250,17 @@ router.patch('/:id', (req, res) => {
 
   // Only items whose quantity is INCREASING need a stock check — the
   // increase can't exceed what's currently available (current stock
-  // already excludes what this order originally reserved).
-  for (const { item, qty } of resolvedLines) {
-    const oldQty = oldQtyByItem[item.id] || 0;
-    const increase = qty - oldQty;
-    if (increase > 0 && increase > item.stock) {
-      return res.status(409).json({
-        error: `Not enough stock for "${item.name}" — ${item.stock} available, ${increase} more needed`,
-      });
+  // already excludes what this order originally reserved). Pending orders
+  // haven't reserved any stock, so no check applies to them.
+  if (!isPending) {
+    for (const { item, qty } of resolvedLines) {
+      const oldQty = oldQtyByItem[item.id] || 0;
+      const increase = qty - oldQty;
+      if (increase > 0 && increase > item.stock) {
+        return res.status(409).json({
+          error: `Not enough stock for "${item.name}" — ${item.stock} available, ${increase} more needed`,
+        });
+      }
     }
   }
 
@@ -225,12 +271,14 @@ router.patch('/:id', (req, res) => {
 
   const cleanNotes = (typeof notes === 'string' && notes.trim()) ? notes.trim() : null;
   const run = db.transaction(() => {
-    const touchedItems = new Set([...Object.keys(oldQtyByItem), ...Object.keys(newQtyByItem)]);
-    for (const itemId of touchedItems) {
-      const oldQty = oldQtyByItem[itemId] || 0;
-      const newQty = newQtyByItem[itemId] || 0;
-      const delta = oldQty - newQty; // positive = return stock, negative = consume more
-      if (delta !== 0) adjustStock.run(delta, itemId);
+    if (!isPending) {
+      const touchedItems = new Set([...Object.keys(oldQtyByItem), ...Object.keys(newQtyByItem)]);
+      for (const itemId of touchedItems) {
+        const oldQty = oldQtyByItem[itemId] || 0;
+        const newQty = newQtyByItem[itemId] || 0;
+        const delta = oldQty - newQty; // positive = return stock, negative = consume more
+        if (delta !== 0) adjustStock.run(delta, itemId);
+      }
     }
     deleteLines.run(orderId);
     for (const { item, qty } of resolvedLines) insertLine.run(orderId, item.id, qty);
@@ -240,7 +288,7 @@ router.patch('/:id', (req, res) => {
 
   const updated = db.prepare(
     `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
-              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy,
+              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status,
             c.id as customerId, c.name as customer
      FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = ?`
   ).get(orderId);
@@ -255,7 +303,7 @@ router.patch('/:id', (req, res) => {
 // DELETE /api/orders/:id — cancel an order and return its reserved stock
 router.delete('/:id', (req, res) => {
   const orderId = req.params.id;
-  const order = db.prepare('SELECT id FROM orders WHERE id = ?').get(orderId);
+  const order = db.prepare('SELECT id, status FROM orders WHERE id = ?').get(orderId);
   if (!order) return res.status(404).json({ error: 'Order not found' });
 
   const lines = db.prepare('SELECT item_id, qty FROM order_lines WHERE order_id = ?').all(orderId);
@@ -264,7 +312,10 @@ router.delete('/:id', (req, res) => {
   const deleteOrder = db.prepare('DELETE FROM orders WHERE id = ?');
 
   const run = db.transaction(() => {
-    for (const l of lines) adjustStock.run(l.qty, l.item_id);
+    // Only submitted orders reserved stock, so only they return it on delete.
+    if (order.status !== 'pending') {
+      for (const l of lines) adjustStock.run(l.qty, l.item_id);
+    }
     deleteLines.run(orderId);
     deleteOrder.run(orderId);
   });
