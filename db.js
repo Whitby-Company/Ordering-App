@@ -37,6 +37,7 @@ db.exec(`
     customer_id INTEGER NOT NULL REFERENCES customers(id),
     delivery_date TEXT NOT NULL,   -- ISO date, e.g. '2026-08-14'
     submitted_at TEXT NOT NULL,    -- ISO datetime
+    submitted_by TEXT,             -- name of whoever placed the order (per-device)
     notes TEXT,                    -- optional order notes / special instructions
     processed INTEGER NOT NULL DEFAULT 0,  -- 1 once entered into QuickBooks
     processed_at TEXT,             -- ISO datetime it was marked processed
@@ -100,6 +101,9 @@ if (!orderColumns.includes('processed')) {
 }
 if (!orderColumns.includes('processed_at')) {
   db.exec('ALTER TABLE orders ADD COLUMN processed_at TEXT');
+}
+if (!orderColumns.includes('submitted_by')) {
+  db.exec('ALTER TABLE orders ADD COLUMN submitted_by TEXT');
 }
 
 module.exports = db;

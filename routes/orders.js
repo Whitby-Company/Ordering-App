@@ -9,7 +9,7 @@ router.get('/', (req, res) => {
   const orders = db
     .prepare(
       `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
-              o.processed, o.processed_at as processedAt,
+              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy,
               c.id as customerId, c.name as customer
        FROM orders o
        JOIN customers c ON c.id = o.customer_id
@@ -42,7 +42,7 @@ function fetchOrdersForIIF(ids) {
   );
   const orderStmt = db.prepare(
     `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
-              o.processed, o.processed_at as processedAt,
+              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy,
             c.name as customer
      FROM orders o JOIN customers c ON c.id = o.customer_id
      WHERE o.id = ?`
@@ -95,7 +95,7 @@ router.patch('/:id/processed', (req, res) => {
 
   const updated = db.prepare(
     `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
-            o.processed, o.processed_at as processedAt,
+            o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy,
             c.id as customerId, c.name as customer
      FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = ?`
   ).get(id);
@@ -135,16 +135,17 @@ router.post('/', (req, res) => {
   }
 
   const insertOrder = db.prepare(
-    'INSERT INTO orders (customer_id, delivery_date, submitted_at, notes) VALUES (?, ?, ?, ?)'
+    'INSERT INTO orders (customer_id, delivery_date, submitted_at, notes, submitted_by) VALUES (?, ?, ?, ?, ?)'
   );
   const insertLine = db.prepare('INSERT INTO order_lines (order_id, item_id, qty) VALUES (?, ?, ?)');
   const decrementStock = db.prepare('UPDATE items SET stock = stock - ? WHERE id = ?');
 
   const submittedAt = new Date().toISOString();
   const cleanNotes = (typeof notes === 'string' && notes.trim()) ? notes.trim() : null;
+  const cleanSubmittedBy = (typeof req.body.submittedBy === 'string' && req.body.submittedBy.trim()) ? req.body.submittedBy.trim() : null;
 
   const createOrder = db.transaction(() => {
-    const orderInfo = insertOrder.run(customerId, deliveryDate, submittedAt, cleanNotes);
+    const orderInfo = insertOrder.run(customerId, deliveryDate, submittedAt, cleanNotes, cleanSubmittedBy);
     const orderId = orderInfo.lastInsertRowid;
     for (const { item, qty } of resolvedLines) {
       insertLine.run(orderId, item.id, qty);
@@ -161,6 +162,7 @@ router.post('/', (req, res) => {
     customerId,
     deliveryDate,
     submittedAt,
+    submittedBy: cleanSubmittedBy,
     notes: cleanNotes,
     lines: resolvedLines.map(({ item, qty }) => ({ id: item.id, name: item.name, brand: item.brand, price: item.price, pack: item.pack, qty })),
   });
@@ -238,7 +240,7 @@ router.patch('/:id', (req, res) => {
 
   const updated = db.prepare(
     `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
-              o.processed, o.processed_at as processedAt,
+              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy,
             c.id as customerId, c.name as customer
      FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = ?`
   ).get(orderId);
