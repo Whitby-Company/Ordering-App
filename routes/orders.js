@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { buildIIF, buildIIFExperimental } = require('../iif');
+const { buildTP } = require('../tp');
 
 const router = express.Router();
 
@@ -79,6 +80,32 @@ router.get('/:id/iif', (req, res) => {
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="order-${id}${suffix}.iif"`);
   res.send(iif);
+});
+
+// GET /api/orders/:id/tp — download a Transaction Pro Importer CSV for one
+// order. GET /api/orders/tp?ids=1,2,3 exports several at once.
+router.get('/tp', (req, res) => {
+  const raw = String(req.query.ids || '').trim();
+  const ids = raw ? raw.split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean) : [];
+  if (ids.length === 0) return res.status(400).json({ error: 'Provide ?ids=1,2,3' });
+  const orders = fetchOrdersForIIF(ids);
+  if (orders.length === 0) return res.status(404).json({ error: 'No matching orders found' });
+  const csv = buildTP(orders);
+  const filename = orders.length === 1 ? `order-${orders[0].id}-TP.csv` : `orders-${orders.length}-TP.csv`;
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(csv);
+});
+
+router.get('/:id/tp', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!id) return res.status(400).json({ error: 'Invalid order id' });
+  const orders = fetchOrdersForIIF([id]);
+  if (orders.length === 0) return res.status(404).json({ error: 'Order not found' });
+  const csv = buildTP(orders);
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="order-${id}-TP.csv"`);
+  res.send(csv);
 });
 
 // PATCH /api/orders/:id/processed — mark an order processed (entered into

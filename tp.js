@@ -1,0 +1,97 @@
+// tp.js — generate a Transaction Pro Importer CSV for QuickBooks Desktop.
+//
+// Matches Transaction Pro's official invoice import template exactly (the 56
+// column headers below, in this order), so the importer auto-maps every field.
+//
+// KEY LESSON (learned the hard way): the "AR Account" column must be LEFT BLANK
+// on import. QuickBooks assigns the default Accounts Receivable account itself;
+// putting a value there made Transaction Pro throw "account does not exist".
+// Transaction Pro's own sample file leaves AR Account (and Terms, Memo, Class,
+// Template, U/M, tax items) blank — QuickBooks fills them from its own records.
+//
+// What we populate (the essentials that build a correct invoice):
+//   Customer, Transaction Date, RefNumber, Item, Quantity, Description, Price,
+//   plus Memo (which Times store, when the app customer is a Times ship-to).
+// Everything else is intentionally blank for a clean baseline import; fields
+// like PO Number, Terms, tax, and ship-to can be layered in later.
+//
+// Quantity is in EACHES (cases x pack) and Price is per-each, so
+// Quantity x Price = the correct line total — no unit-of-measure step needed.
+
+const { mapCustomer, formatIIFDate } = require('./iif');
+
+// The exact Transaction Pro invoice template header row, in order.
+const TP_HEADERS = [
+  'Customer', 'Transaction Date', 'RefNumber', 'PO Number', 'Terms', 'Class',
+  'Template Name', 'To Be Printed', 'Ship Date',
+  'BillTo Line1', 'BillTo Line2', 'BillTo Line3', 'BillTo Line4',
+  'BillTo City', 'BillTo State', 'BillTo PostalCode', 'BillTo Country',
+  'ShipTo Line1', 'ShipTo Line2', 'ShipTo Line3', 'ShipTo Line4',
+  'ShipTo City', 'ShipTo State', 'ShipTo PostalCode', 'ShipTo Country',
+  'Phone', 'Fax', 'Email', 'Contact Name', 'First Name', 'Last Name', 'Rep',
+  'Due Date', 'Ship Method', 'Customer Message', 'Memo', 'Cust. Tax Code',
+  'Item', 'Quantity', 'Description', 'Price', 'Is Pending', 'Item Line Class',
+  'Service Date', 'FOB', 'Customer Acct No', 'Sales Tax Item', 'To Be E-Mailed',
+  'Other', 'Other1', 'Other2', 'Unit of Measure', 'AR Account', 'Currency',
+  'Exchange Rate', 'Sales Tax Code',
+];
+
+// Per-each price x pack x qty(cases) = line total; quantity is exported as eaches.
+function eaches(line) {
+  const pack = Number(line.pack) || 1;
+  const qty = Number(line.qty) || 0;
+  return pack * qty;
+}
+function round2(n) {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+// RFC-4180 CSV quoting: wrap in double-quotes if the value has a comma, quote,
+// or newline; escape embedded quotes by doubling them.
+function csvCell(value) {
+  const s = value === null || value === undefined ? '' : String(value);
+  if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+// Build one CSV row (array of 56 cells) from a base field map.
+function rowFor(fields) {
+  return TP_HEADERS.map(h => csvCell(fields[h] ?? ''));
+}
+
+// Build the full Transaction Pro CSV for one or more orders.
+// Each order becomes an invoice; every line item is one CSV row that repeats
+// the invoice-level fields (Customer/Date/RefNumber/Memo) — exactly how TP's
+// sample groups multiple lines into a single invoice by RefNumber.
+function buildTP(orders) {
+  const lines = [TP_HEADERS.join(',')];
+
+  for (const order of orders) {
+    const { qbName, memo } = mapCustomer(order.customer);
+    const date = formatIIFDate(order.deliveryDate);
+    // Only real (qty > 0) lines go on the invoice; check-in / zero lines are
+    // skipped so they don't create $0 invoice rows.
+    const orderLines = (order.lines || []).filter(l => (Number(l.qty) || 0) > 0);
+    if (orderLines.length === 0) continue;
+
+    for (const l of orderLines) {
+      const fields = {
+        Customer: qbName,
+        'Transaction Date': date,
+        RefNumber: order.id,
+        Memo: memo, // e.g. "Kahala #2" for a Times ship-to; blank otherwise
+        Item: l.id, // app SKU matches the QuickBooks item name exactly
+        Quantity: eaches(l),
+        Description: l.name,
+        Price: round2(l.price),
+        // 'AR Account' intentionally omitted -> blank (QuickBooks fills it in)
+      };
+      lines.push(rowFor(fields).join(','));
+    }
+  }
+
+  // CRLF line endings are the most import-friendly for Windows tools.
+  return lines.join('\r\n') + '\r\n';
+}
+
+module.exports = { buildTP, TP_HEADERS };
