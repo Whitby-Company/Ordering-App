@@ -79,7 +79,13 @@ function buildTP(orders) {
         Customer: qbName,
         'Transaction Date': date,
         RefNumber: order.id,
+        'To Be Printed': 'Y',
         Memo: memo, // e.g. "Kahala #2" for a Times ship-to; blank otherwise
+        // Taxable, matching the real QuickBooks invoices. Sales Tax Item is
+        // left blank so QuickBooks applies the customer's default tax item
+        // (avoids a name-match error).
+        'Cust. Tax Code': 'Tax',
+        'Sales Tax Code': 'Tax',
         Item: l.id, // app SKU matches the QuickBooks item name exactly
         Quantity: eaches(l),
         Description: l.name,
