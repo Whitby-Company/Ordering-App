@@ -137,33 +137,42 @@ if (!orderColumns.includes('status')) {
 // Small key/value table for one-time migrations / flags.
 db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)');
 
-// One-time seed of ship-to addresses. Matches the built-in store addresses to
-// existing customers by normalized name and fills those that don't already have
-// a ship-to line 1. Runs once (guarded by a meta flag) so it never overwrites
-// later edits, and only touches customers it can match by name.
+// Apply the built-in ship-to addresses, matching customers by normalized name.
+// Returns { matched: [...names], unmatched: [...names] }. By default only fills
+// customers that don't already have a ship-to (so it won't clobber edits);
+// pass { overwrite: true } to re-apply to everyone.
+function applyShipToSeed({ overwrite = false } = {}) {
+  const { SHIPTO_SEED, normalizeName } = require('./shiptoSeed');
+  const customers = db.prepare('SELECT id, name, shipto_line1 FROM customers').all();
+  const byNorm = new Map();
+  for (const c of customers) byNorm.set(normalizeName(c.name), c);
+  const upd = db.prepare(
+    overwrite
+      ? `UPDATE customers SET shipto_line1=?, shipto_line2=?, shipto_city=?, shipto_state=?, shipto_zip=? WHERE id=?`
+      : `UPDATE customers SET shipto_line1=?, shipto_line2=?, shipto_city=?, shipto_state=?, shipto_zip=? WHERE id=? AND (shipto_line1 IS NULL OR shipto_line1='')`
+  );
+  const matched = [];
+  const unmatched = [];
+  for (const s of SHIPTO_SEED) {
+    const c = byNorm.get(normalizeName(s.name));
+    if (c) { upd.run(s.line1, s.line2, s.city, s.state, s.zip, c.id); matched.push(s.name); }
+    else unmatched.push(s.name);
+  }
+  return { matched, unmatched };
+}
+
+// One-time seed on startup (guarded by a meta flag so it never overwrites edits).
 function seedShipToOnce() {
   const FLAG = 'shipto_seed_v1';
   const done = db.prepare('SELECT value FROM meta WHERE key = ?').get(FLAG);
   if (done) return;
   try {
-    const { SHIPTO_SEED, normalizeName } = require('./shiptoSeed');
-    const customers = db.prepare('SELECT id, name, shipto_line1 FROM customers').all();
-    const byNorm = new Map();
-    for (const c of customers) byNorm.set(normalizeName(c.name), c);
-    const upd = db.prepare(
-      `UPDATE customers SET shipto_line1 = ?, shipto_line2 = ?, shipto_city = ?, shipto_state = ?, shipto_zip = ?
-       WHERE id = ? AND (shipto_line1 IS NULL OR shipto_line1 = '')`
-    );
-    let matched = 0;
-    for (const s of SHIPTO_SEED) {
-      const c = byNorm.get(normalizeName(s.name));
-      if (c) { upd.run(s.line1, s.line2, s.city, s.state, s.zip, c.id); matched++; }
-    }
+    const { matched } = applyShipToSeed({ overwrite: false });
     // Only lock the flag once we've actually matched customers, so an early run
     // against an empty table (e.g. during seeding) doesn't disable it forever.
-    if (matched > 0) {
-      db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(FLAG, String(matched));
-      console.log(`Ship-to seed: filled ${matched} customer(s).`);
+    if (matched.length > 0) {
+      db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(FLAG, String(matched.length));
+      console.log(`Ship-to seed: filled ${matched.length} customer(s).`);
     }
   } catch (err) {
     console.error('Ship-to seed skipped:', err.message);
@@ -173,3 +182,4 @@ seedShipToOnce();
 
 module.exports = db;
 module.exports.seedShipToOnce = seedShipToOnce;
+module.exports.applyShipToSeed = applyShipToSeed;

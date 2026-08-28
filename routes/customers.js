@@ -16,6 +16,20 @@ router.get('/', (req, res) => {
   res.json(customers);
 });
 
+// POST /api/customers/reseed-shipto — (re)apply the built-in store ship-to
+// addresses, matching customers by normalized name. Returns which store names
+// matched and which didn't, so mismatches are visible. Pass {"overwrite":true}
+// to replace existing ship-to values too (default only fills empty ones).
+router.post('/reseed-shipto', (req, res) => {
+  const overwrite = !!(req.body && req.body.overwrite);
+  try {
+    const result = db.applyShipToSeed({ overwrite });
+    res.json({ ok: true, overwrite, matchedCount: result.matched.length, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Could not reseed ship-to addresses' });
+  }
+});
+
 // POST /api/customers — add a new customer  { name }
 router.post('/', (req, res) => {
   const { name } = req.body;
