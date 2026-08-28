@@ -22,7 +22,7 @@
 
 const { mapCustomer, formatIIFDate } = require('./iif');
 
-// The exact Transaction Pro invoice template header row, in order.
+// The full Transaction Pro invoice template header row, in order (reference).
 const TP_HEADERS = [
   'Customer', 'Transaction Date', 'RefNumber', 'PO Number', 'Terms', 'Class',
   'Template Name', 'To Be Printed', 'Ship Date',
@@ -36,6 +36,15 @@ const TP_HEADERS = [
   'Service Date', 'FOB', 'Customer Acct No', 'Sales Tax Item', 'To Be E-Mailed',
   'Other', 'Other1', 'Other2', 'Unit of Measure', 'AR Account', 'Currency',
   'Exchange Rate', 'Sales Tax Code',
+];
+
+// The columns we actually export, in the template's original order. Only the
+// fields we populate — Price and Description come from the QuickBooks item, and
+// everything else (Terms, addresses, etc.) is left to QuickBooks / the customer.
+const TP_COLUMNS = [
+  'Customer', 'Transaction Date', 'RefNumber', 'PO Number', 'Template Name',
+  'Memo', 'Cust. Tax Code', 'Item', 'Quantity', 'FOB', 'Other', 'Other1',
+  'Unit of Measure', 'AR Account', 'Sales Tax Code',
 ];
 
 // Per-each price x pack x qty(cases) = line total; quantity is exported as eaches.
@@ -56,9 +65,9 @@ function csvCell(value) {
   return s;
 }
 
-// Build one CSV row (array of 56 cells) from a base field map.
+// Build one CSV row from the kept columns.
 function rowFor(fields) {
-  return TP_HEADERS.map(h => csvCell(fields[h] ?? ''));
+  return TP_COLUMNS.map(h => csvCell(fields[h] ?? ''));
 }
 
 // Format a delivery date (ISO yyyy-mm-dd) as MMDDYY for the PO number.
@@ -73,7 +82,7 @@ function poDate(iso) {
 // the invoice-level fields (Customer/Date/RefNumber/PO/Memo/totals) — exactly
 // how TP's sample groups multiple lines into a single invoice by RefNumber.
 function buildTP(orders) {
-  const lines = [TP_HEADERS.join(',')];
+  const lines = [TP_COLUMNS.join(',')];
 
   for (const order of orders) {
     const { qbName } = mapCustomer(order.customer);
@@ -101,16 +110,14 @@ function buildTP(orders) {
         RefNumber: order.id,
         'PO Number': poNumber,
         'Template Name': '1 - HG  INV W/ UPC',
-        'To Be Printed': 'Y',
         Memo: memo,
-        // Taxable, matching the real QuickBooks invoices. Sales Tax Item is
-        // left blank so QuickBooks applies the customer's default tax item.
+        // Taxable, matching the real QuickBooks invoices.
         'Cust. Tax Code': 'Tax',
         'Sales Tax Code': 'Tax',
         Item: l.id, // app SKU matches the QuickBooks item name exactly
         Quantity: eaches(l),
-        Description: l.name,
-        Price: round2(l.price),
+        // Price and Description are intentionally omitted — QuickBooks fills
+        // them from the item record.
         // Other = total cases on the order; FOB = total eaches on the order;
         // Other1 = this line's case count.
         Other: totalCases,
