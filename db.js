@@ -97,6 +97,14 @@ if (!customerColumns.includes('delivery_day')) {
   // Usual delivery day of week: 0=Sunday .. 6=Saturday, NULL = no default.
   db.exec('ALTER TABLE customers ADD COLUMN delivery_day INTEGER');
 }
+if (!customerColumns.includes('abbreviation')) {
+  // Short code used in the Transaction Pro PO number, e.g. "T2".
+  db.exec('ALTER TABLE customers ADD COLUMN abbreviation TEXT');
+}
+if (!customerColumns.includes('short_name')) {
+  // Short store name used in the invoice Memo, e.g. "Kahala".
+  db.exec('ALTER TABLE customers ADD COLUMN short_name TEXT');
+}
 const orderColumns = db.prepare("PRAGMA table_info(orders)").all().map(c => c.name);
 if (!orderColumns.includes('notes')) {
   db.exec('ALTER TABLE orders ADD COLUMN notes TEXT');

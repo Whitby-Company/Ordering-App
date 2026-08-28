@@ -10,8 +10,8 @@ const router = express.Router();
 router.get('/', (req, res) => {
   const { includeInactive } = req.query;
   const sql = includeInactive === 'true'
-    ? 'SELECT id, name, active, delivery_day as deliveryDay FROM customers ORDER BY name ASC'
-    : 'SELECT id, name, active, delivery_day as deliveryDay FROM customers WHERE active = 1 ORDER BY name ASC';
+    ? 'SELECT id, name, active, delivery_day as deliveryDay, abbreviation, short_name as shortName FROM customers ORDER BY name ASC'
+    : 'SELECT id, name, active, delivery_day as deliveryDay, abbreviation, short_name as shortName FROM customers WHERE active = 1 ORDER BY name ASC';
   const customers = db.prepare(sql).all();
   res.json(customers);
 });
@@ -36,14 +36,16 @@ router.post('/', (req, res) => {
 // PATCH /api/customers/:id — update a customer. Accepts { active } to toggle
 // active/inactive and/or { name } to rename. At least one must be provided.
 router.patch('/:id', (req, res) => {
-  const { active, name, deliveryDay } = req.body;
+  const { active, name, deliveryDay, abbreviation, shortName } = req.body;
   const hasActive = typeof active === 'boolean';
   const hasName = typeof name === 'string';
   // deliveryDay: integer 0-6 to set a usual day, or null to clear it.
   const hasDay = deliveryDay === null || (typeof deliveryDay === 'number' && Number.isInteger(deliveryDay) && deliveryDay >= 0 && deliveryDay <= 6);
   const dayProvided = 'deliveryDay' in req.body;
-  if (!hasActive && !hasName && !dayProvided) {
-    return res.status(400).json({ error: 'Provide active (boolean), name (string), and/or deliveryDay (0-6 or null)' });
+  const abbrProvided = 'abbreviation' in req.body;
+  const shortProvided = 'shortName' in req.body;
+  if (!hasActive && !hasName && !dayProvided && !abbrProvided && !shortProvided) {
+    return res.status(400).json({ error: 'Provide active, name, deliveryDay, abbreviation, and/or shortName' });
   }
   if (dayProvided && !hasDay) {
     return res.status(400).json({ error: 'deliveryDay must be an integer 0-6 (Sun-Sat) or null' });
@@ -52,14 +54,19 @@ router.patch('/:id', (req, res) => {
     return res.status(400).json({ error: 'name cannot be empty' });
   }
 
-  const existing = db.prepare('SELECT id, name, active, delivery_day as deliveryDay FROM customers WHERE id = ?').get(req.params.id);
+  const existing = db.prepare('SELECT id, name, active, delivery_day as deliveryDay, abbreviation, short_name as shortName FROM customers WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Customer not found' });
+
+  // Normalize abbreviation / short name: trim, and store empty as NULL.
+  const normText = v => { const t = (v === null || v === undefined) ? '' : String(v).trim(); return t === '' ? null : t; };
 
   const updates = [];
   const params = [];
   if (hasActive) { updates.push('active = ?'); params.push(active ? 1 : 0); }
   if (hasName) { updates.push('name = ?'); params.push(name.trim()); }
   if (dayProvided) { updates.push('delivery_day = ?'); params.push(deliveryDay === null ? null : deliveryDay); }
+  if (abbrProvided) { updates.push('abbreviation = ?'); params.push(normText(abbreviation)); }
+  if (shortProvided) { updates.push('short_name = ?'); params.push(normText(shortName)); }
   params.push(req.params.id);
 
   try {
@@ -76,6 +83,8 @@ router.patch('/:id', (req, res) => {
     name: hasName ? name.trim() : existing.name,
     active: hasActive ? active : !!existing.active,
     deliveryDay: dayProvided ? deliveryDay : existing.deliveryDay,
+    abbreviation: abbrProvided ? normText(abbreviation) : existing.abbreviation,
+    shortName: shortProvided ? normText(shortName) : existing.shortName,
   });
 });
 

@@ -61,37 +61,62 @@ function rowFor(fields) {
   return TP_HEADERS.map(h => csvCell(fields[h] ?? ''));
 }
 
+// Format a delivery date (ISO yyyy-mm-dd) as MMDDYY for the PO number.
+function poDate(iso) {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  return `${m}${d}${y.slice(2)}`;
+}
+
 // Build the full Transaction Pro CSV for one or more orders.
 // Each order becomes an invoice; every line item is one CSV row that repeats
-// the invoice-level fields (Customer/Date/RefNumber/Memo) — exactly how TP's
-// sample groups multiple lines into a single invoice by RefNumber.
+// the invoice-level fields (Customer/Date/RefNumber/PO/Memo/totals) — exactly
+// how TP's sample groups multiple lines into a single invoice by RefNumber.
 function buildTP(orders) {
   const lines = [TP_HEADERS.join(',')];
 
   for (const order of orders) {
-    const { qbName, memo } = mapCustomer(order.customer);
+    const { qbName } = mapCustomer(order.customer);
     const date = formatIIFDate(order.deliveryDate);
     // Only real (qty > 0) lines go on the invoice; check-in / zero lines are
     // skipped so they don't create $0 invoice rows.
     const orderLines = (order.lines || []).filter(l => (Number(l.qty) || 0) > 0);
     if (orderLines.length === 0) continue;
 
+    // Invoice-level values built from the customer's abbreviation / short name.
+    // PO Number = MMDDYY-<abbr>; Memo = <short name>. Blank if not set.
+    const abbr = (order.abbreviation || '').trim();
+    const shortName = (order.shortName || '').trim();
+    const poNumber = abbr ? `${poDate(order.deliveryDate)}-${abbr}` : '';
+    const memo = shortName;
+
+    // Whole-order totals (repeated on every line for the Other1/Other2 fields).
+    const totalCases = orderLines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
+    const totalEaches = orderLines.reduce((s, l) => s + eaches(l), 0);
+
     for (const l of orderLines) {
       const fields = {
         Customer: qbName,
         'Transaction Date': date,
         RefNumber: order.id,
+        'PO Number': poNumber,
+        'Template Name': '1-HG INV W/UPC',
         'To Be Printed': 'Y',
-        Memo: memo, // e.g. "Kahala #2" for a Times ship-to; blank otherwise
+        Memo: memo,
         // Taxable, matching the real QuickBooks invoices. Sales Tax Item is
-        // left blank so QuickBooks applies the customer's default tax item
-        // (avoids a name-match error).
+        // left blank so QuickBooks applies the customer's default tax item.
         'Cust. Tax Code': 'Tax',
         'Sales Tax Code': 'Tax',
         Item: l.id, // app SKU matches the QuickBooks item name exactly
         Quantity: eaches(l),
         Description: l.name,
         Price: round2(l.price),
+        // Custom "Other" fields: Other = this line's cases; Other1 = total cases
+        // on the order; Other2 = total eaches on the order.
+        Other: Number(l.qty) || 0,
+        Other1: totalCases,
+        Other2: totalEaches,
+        'Unit of Measure': 'ea',
         // A/R account MUST be filled in for this Transaction Pro build — leaving
         // it blank makes WriteInvoice fail with "invalid account specified".
         'AR Account': 'Accounts Receivable',
