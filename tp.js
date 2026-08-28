@@ -111,11 +111,11 @@ function buildTP(orders) {
         Quantity: eaches(l),
         Description: l.name,
         Price: round2(l.price),
-        // Custom "Other" fields: Other = this line's cases; Other1 = total cases
-        // on the order; Other2 = total eaches on the order.
-        Other: Number(l.qty) || 0,
-        Other1: totalCases,
-        Other2: totalEaches,
+        // Other = total cases on the order; FOB = total eaches on the order;
+        // Other1 = this line's case count.
+        Other: totalCases,
+        FOB: totalEaches,
+        Other1: Number(l.qty) || 0,
         'Unit of Measure': 'ea',
         // A/R account MUST be filled in for this Transaction Pro build — leaving
         // it blank makes WriteInvoice fail with "invalid account specified".
