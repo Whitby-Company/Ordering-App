@@ -93,11 +93,19 @@ function buildTP(orders) {
     if (orderLines.length === 0) continue;
 
     // Invoice-level values built from the customer's abbreviation / short name.
-    // PO Number = MMDDYY-<abbr>; Memo = <short name>. Blank if not set.
+    // PO Number = MMDDYY-<abbr>. Memo = ["Asst" if 2+ brands] + short name + PO.
     const abbr = (order.abbreviation || '').trim();
     const shortName = (order.shortName || '').trim();
     const poNumber = abbr ? `${poDate(order.deliveryDate)}-${abbr}` : '';
-    const memo = shortName;
+
+    // "Asst" (assorted) when the order spans more than one brand.
+    const brands = new Set(orderLines.map(l => (l.brand || String(l.id).split(':')[0] || '').trim()).filter(Boolean));
+    let memo = '';
+    if (shortName) {
+      const prefix = brands.size > 1 ? 'Asst ' : '';
+      const poSuffix = poNumber ? ` ${poNumber}` : '';
+      memo = `${prefix}${shortName}${poSuffix}`;
+    }
 
     // Whole-order totals (repeated on every line for the Other1/Other2 fields).
     const totalCases = orderLines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
