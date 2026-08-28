@@ -93,6 +93,10 @@ const customerColumns = db.prepare("PRAGMA table_info(customers)").all().map(c =
 if (!customerColumns.includes('active')) {
   db.exec('ALTER TABLE customers ADD COLUMN active INTEGER NOT NULL DEFAULT 1');
 }
+if (!customerColumns.includes('delivery_day')) {
+  // Usual delivery day of week: 0=Sunday .. 6=Saturday, NULL = no default.
+  db.exec('ALTER TABLE customers ADD COLUMN delivery_day INTEGER');
+}
 const orderColumns = db.prepare("PRAGMA table_info(orders)").all().map(c => c.name);
 if (!orderColumns.includes('notes')) {
   db.exec('ALTER TABLE orders ADD COLUMN notes TEXT');
