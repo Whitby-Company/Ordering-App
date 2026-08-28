@@ -3,11 +3,13 @@
 // Matches Transaction Pro's official invoice import template exactly (the 56
 // column headers below, in this order), so the importer auto-maps every field.
 //
-// KEY LESSON (learned the hard way): the "AR Account" column must be LEFT BLANK
-// on import. QuickBooks assigns the default Accounts Receivable account itself;
-// putting a value there made Transaction Pro throw "account does not exist".
-// Transaction Pro's own sample file leaves AR Account (and Terms, Memo, Class,
-// Template, U/M, tax items) blank — QuickBooks fills them from its own records.
+// KEY LESSON (proven by testing): the "AR Account" column must be FILLED IN
+// with the real A/R account name ("Accounts Receivable"). This Transaction Pro
+// build does NOT auto-fill A/R from a blank column — it passes the blank to
+// WriteInvoice, which QuickBooks rejects as "invalid account specified". The
+// error surfaces on the item-settings screen but is really the invoice's A/R
+// account. QuickBooks still fills Terms, Memo, Class, U/M from its own records,
+// so those stay blank.
 //
 // What we populate (the essentials that build a correct invoice):
 //   Customer, Transaction Date, RefNumber, Item, Quantity, Description, Price,
@@ -90,7 +92,9 @@ function buildTP(orders) {
         Quantity: eaches(l),
         Description: l.name,
         Price: round2(l.price),
-        // 'AR Account' intentionally omitted -> blank (QuickBooks fills it in)
+        // A/R account MUST be filled in for this Transaction Pro build — leaving
+        // it blank makes WriteInvoice fail with "invalid account specified".
+        'AR Account': 'Accounts Receivable',
       };
       lines.push(rowFor(fields).join(','));
     }
