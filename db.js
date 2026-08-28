@@ -110,6 +110,12 @@ if (!customerColumns.includes('short_name')) {
   // Short store name used in the invoice Memo, e.g. "Kahala".
   db.exec('ALTER TABLE customers ADD COLUMN short_name TEXT');
 }
+// Ship-to address (feeds the ShipTo columns in the Transaction Pro export).
+for (const col of ['shipto_line1', 'shipto_line2', 'shipto_city', 'shipto_state', 'shipto_zip']) {
+  if (!customerColumns.includes(col)) {
+    db.exec(`ALTER TABLE customers ADD COLUMN ${col} TEXT`);
+  }
+}
 const orderColumns = db.prepare("PRAGMA table_info(orders)").all().map(c => c.name);
 if (!orderColumns.includes('notes')) {
   db.exec('ALTER TABLE orders ADD COLUMN notes TEXT');
@@ -128,4 +134,42 @@ if (!orderColumns.includes('status')) {
   db.exec("UPDATE orders SET status = 'submitted' WHERE status IS NULL");
 }
 
+// Small key/value table for one-time migrations / flags.
+db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)');
+
+// One-time seed of ship-to addresses. Matches the built-in store addresses to
+// existing customers by normalized name and fills those that don't already have
+// a ship-to line 1. Runs once (guarded by a meta flag) so it never overwrites
+// later edits, and only touches customers it can match by name.
+function seedShipToOnce() {
+  const FLAG = 'shipto_seed_v1';
+  const done = db.prepare('SELECT value FROM meta WHERE key = ?').get(FLAG);
+  if (done) return;
+  try {
+    const { SHIPTO_SEED, normalizeName } = require('./shiptoSeed');
+    const customers = db.prepare('SELECT id, name, shipto_line1 FROM customers').all();
+    const byNorm = new Map();
+    for (const c of customers) byNorm.set(normalizeName(c.name), c);
+    const upd = db.prepare(
+      `UPDATE customers SET shipto_line1 = ?, shipto_line2 = ?, shipto_city = ?, shipto_state = ?, shipto_zip = ?
+       WHERE id = ? AND (shipto_line1 IS NULL OR shipto_line1 = '')`
+    );
+    let matched = 0;
+    for (const s of SHIPTO_SEED) {
+      const c = byNorm.get(normalizeName(s.name));
+      if (c) { upd.run(s.line1, s.line2, s.city, s.state, s.zip, c.id); matched++; }
+    }
+    // Only lock the flag once we've actually matched customers, so an early run
+    // against an empty table (e.g. during seeding) doesn't disable it forever.
+    if (matched > 0) {
+      db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(FLAG, String(matched));
+      console.log(`Ship-to seed: filled ${matched} customer(s).`);
+    }
+  } catch (err) {
+    console.error('Ship-to seed skipped:', err.message);
+  }
+}
+seedShipToOnce();
+
 module.exports = db;
+module.exports.seedShipToOnce = seedShipToOnce;

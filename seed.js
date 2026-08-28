@@ -39,6 +39,9 @@ const run = db.transaction(() => {
 
 run();
 
+// Now that customers exist, fill in their built-in ship-to addresses.
+if (typeof db.seedShipToOnce === 'function') db.seedShipToOnce();
+
 const activeItems = data.items.filter(i => i.active !== false).length;
 const activeCustomers = data.customers.filter(c => c.active !== false).length;
 console.log(

@@ -43,6 +43,7 @@ const TP_HEADERS = [
 // everything else (Terms, addresses, etc.) is left to QuickBooks / the customer.
 const TP_COLUMNS = [
   'Customer', 'Transaction Date', 'RefNumber', 'PO Number', 'Template Name',
+  'ShipTo Line1', 'ShipTo Line2', 'ShipTo City', 'ShipTo State', 'ShipTo PostalCode',
   'Memo', 'Cust. Tax Code', 'Item', 'Quantity', 'FOB', 'Other', 'Other1',
   'Unit of Measure', 'AR Account', 'Sales Tax Code',
 ];
@@ -124,6 +125,12 @@ function buildTP(orders, brandAbbrev = {}) {
         RefNumber: order.id,
         'PO Number': poNumber,
         'Template Name': '1 - HG  INV W/ UPC',
+        // Ship-to address for this specific store (from the customer record).
+        'ShipTo Line1': order.shipToLine1 || '',
+        'ShipTo Line2': order.shipToLine2 || '',
+        'ShipTo City': order.shipToCity || '',
+        'ShipTo State': order.shipToState || '',
+        'ShipTo PostalCode': order.shipToZip || '',
         Memo: memo,
         // Taxable, matching the real QuickBooks invoices.
         'Cust. Tax Code': 'Tax',

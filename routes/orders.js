@@ -44,7 +44,9 @@ function fetchOrdersForIIF(ids) {
   const orderStmt = db.prepare(
     `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
               o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status,
-            c.name as customer, c.abbreviation as abbreviation, c.short_name as shortName
+            c.name as customer, c.abbreviation as abbreviation, c.short_name as shortName,
+            c.shipto_line1 as shipToLine1, c.shipto_line2 as shipToLine2, c.shipto_city as shipToCity,
+            c.shipto_state as shipToState, c.shipto_zip as shipToZip
      FROM orders o JOIN customers c ON c.id = o.customer_id
      WHERE o.id = ?`
   );
