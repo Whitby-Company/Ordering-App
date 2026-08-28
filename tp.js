@@ -100,7 +100,7 @@ function buildTP(orders) {
         'Transaction Date': date,
         RefNumber: order.id,
         'PO Number': poNumber,
-        'Template Name': '1-HG INV W/UPC',
+        'Template Name': '1 - HG INV W/ UPC',
         'To Be Printed': 'Y',
         Memo: memo,
         // Taxable, matching the real QuickBooks invoices. Sales Tax Item is
