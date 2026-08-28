@@ -96,7 +96,7 @@ function buildTP(orders, brandAbbrev = {}) {
     // PO Number = MMDDYY-<abbr>.
     const abbr = (order.abbreviation || '').trim();
     const shortName = (order.shortName || '').trim();
-    const poNumber = abbr ? `${poDate(order.deliveryDate)}-${abbr}` : '';
+    const poNumber = abbr ? `PO# ${poDate(order.deliveryDate)}-${abbr}` : '';
 
     // Memo prefix: "Asst" when the order spans 2+ brands; for a single brand,
     // that brand's abbreviation (falling back to the full brand name).
