@@ -71,11 +71,20 @@ function rowFor(fields) {
   return TP_COLUMNS.map(h => csvCell(fields[h] ?? ''));
 }
 
-// Format a delivery date (ISO yyyy-mm-dd) as MMDDYY for the PO number.
+// Format an ISO date (yyyy-mm-dd) as MMDDYY for the PO number.
 function poDate(iso) {
   if (!iso) return '';
   const [y, m, d] = iso.split('-');
   return `${m}${d}${y.slice(2)}`;
+}
+
+// Today's date as ISO yyyy-mm-dd (used for the PO number = the invoice/export date).
+function todayISO() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 // Build the full Transaction Pro CSV for one or more orders.
@@ -84,6 +93,8 @@ function poDate(iso) {
 // how TP's sample groups multiple lines into a single invoice by RefNumber.
 function buildTP(orders, brandAbbrev = {}) {
   const lines = [TP_COLUMNS.join(',')];
+  // PO number uses the export date (when the invoice is being created).
+  const exportPoDate = poDate(todayISO());
 
   for (const order of orders) {
     const { qbName } = mapCustomer(order.customer);
@@ -94,10 +105,10 @@ function buildTP(orders, brandAbbrev = {}) {
     if (orderLines.length === 0) continue;
 
     // Invoice-level values built from the customer's abbreviation / short name.
-    // PO Number = MMDDYY-<abbr>.
+    // PO Number = MMDDYY(export date)-<abbr>.
     const abbr = (order.abbreviation || '').trim();
     const shortName = (order.shortName || '').trim();
-    const poNumber = abbr ? `${poDate(order.deliveryDate)}-${abbr}` : '';
+    const poNumber = abbr ? `${exportPoDate}-${abbr}` : '';
     // In the memo the PO is labeled "PO#"; the PO Number column stays plain.
     const poForMemo = poNumber ? `PO# ${poNumber}` : '';
 
