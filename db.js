@@ -59,6 +59,11 @@ db.exec(`
     color TEXT NOT NULL          -- hex color, e.g. '#2B5D50'
   );
 
+  CREATE TABLE IF NOT EXISTS brand_settings (
+    brand TEXT PRIMARY KEY,
+    abbreviation TEXT            -- short code used in the invoice memo, e.g. "LOA"
+  );
+
   CREATE TABLE IF NOT EXISTS print_order (
     item_id TEXT PRIMARY KEY,    -- SKU
     position INTEGER NOT NULL    -- 0-based sort position for printouts

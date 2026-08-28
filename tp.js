@@ -81,7 +81,7 @@ function poDate(iso) {
 // Each order becomes an invoice; every line item is one CSV row that repeats
 // the invoice-level fields (Customer/Date/RefNumber/PO/Memo/totals) — exactly
 // how TP's sample groups multiple lines into a single invoice by RefNumber.
-function buildTP(orders) {
+function buildTP(orders, brandAbbrev = {}) {
   const lines = [TP_COLUMNS.join(',')];
 
   for (const order of orders) {
@@ -93,18 +93,22 @@ function buildTP(orders) {
     if (orderLines.length === 0) continue;
 
     // Invoice-level values built from the customer's abbreviation / short name.
-    // PO Number = MMDDYY-<abbr>. Memo = ["Asst" if 2+ brands] + short name + PO.
+    // PO Number = MMDDYY-<abbr>.
     const abbr = (order.abbreviation || '').trim();
     const shortName = (order.shortName || '').trim();
     const poNumber = abbr ? `${poDate(order.deliveryDate)}-${abbr}` : '';
 
-    // "Asst" (assorted) when the order spans more than one brand.
-    const brands = new Set(orderLines.map(l => (l.brand || String(l.id).split(':')[0] || '').trim()).filter(Boolean));
+    // Memo prefix: "Asst" when the order spans 2+ brands; for a single brand,
+    // that brand's abbreviation (falling back to the full brand name).
+    const brands = [...new Set(orderLines.map(l => (l.brand || String(l.id).split(':')[0] || '').trim()).filter(Boolean))];
+    let prefix = '';
+    if (brands.length > 1) prefix = 'Asst';
+    else if (brands.length === 1) prefix = brandAbbrev[brands[0]] || brands[0];
+
     let memo = '';
     if (shortName) {
-      const prefix = brands.size > 1 ? 'Asst ' : '';
       const poSuffix = poNumber ? ` ${poNumber}` : '';
-      memo = `${prefix}${shortName}${poSuffix}`;
+      memo = `${prefix ? prefix + ' ' : ''}${shortName}${poSuffix}`;
     }
 
     // Whole-order totals (repeated on every line for the Other1/Other2 fields).

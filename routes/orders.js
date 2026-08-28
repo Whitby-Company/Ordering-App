@@ -56,6 +56,14 @@ function fetchOrdersForIIF(ids) {
   return out;
 }
 
+// { brandName: abbreviation } for brands that have one set.
+function brandAbbrevMap() {
+  const rows = db.prepare('SELECT brand, abbreviation FROM brand_settings').all();
+  const map = {};
+  for (const r of rows) if (r.abbreviation) map[r.brand] = r.abbreviation;
+  return map;
+}
+
 router.get('/iif', (req, res) => {
   const raw = String(req.query.ids || '').trim();
   const ids = raw ? raw.split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean) : [];
@@ -90,7 +98,7 @@ router.get('/tp', (req, res) => {
   if (ids.length === 0) return res.status(400).json({ error: 'Provide ?ids=1,2,3' });
   const orders = fetchOrdersForIIF(ids);
   if (orders.length === 0) return res.status(404).json({ error: 'No matching orders found' });
-  const csv = buildTP(orders);
+  const csv = buildTP(orders, brandAbbrevMap());
   const filename = orders.length === 1 ? `order-${orders[0].id}-TP.csv` : `orders-${orders.length}-TP.csv`;
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -102,7 +110,7 @@ router.get('/:id/tp', (req, res) => {
   if (!id) return res.status(400).json({ error: 'Invalid order id' });
   const orders = fetchOrdersForIIF([id]);
   if (orders.length === 0) return res.status(404).json({ error: 'Order not found' });
-  const csv = buildTP(orders);
+  const csv = buildTP(orders, brandAbbrevMap());
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="order-${id}-TP.csv"`);
   res.send(csv);
