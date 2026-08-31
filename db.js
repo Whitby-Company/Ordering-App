@@ -111,7 +111,7 @@ if (!customerColumns.includes('short_name')) {
   db.exec('ALTER TABLE customers ADD COLUMN short_name TEXT');
 }
 // Ship-to address (feeds the ShipTo columns in the Transaction Pro export).
-for (const col of ['shipto_line1', 'shipto_line2', 'shipto_city', 'shipto_state', 'shipto_zip']) {
+for (const col of ['shipto_line1', 'shipto_line2', 'shipto_city', 'shipto_state', 'shipto_zip', 'shipto_phone']) {
   if (!customerColumns.includes(col)) {
     db.exec(`ALTER TABLE customers ADD COLUMN ${col} TEXT`);
   }
@@ -143,27 +143,28 @@ db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)');
 // pass { overwrite: true } to re-apply to everyone.
 function applyShipToSeed({ overwrite = false } = {}) {
   const { SHIPTO_SEED, normalizeName } = require('./shiptoSeed');
-  const customers = db.prepare('SELECT id, name, shipto_line1 FROM customers').all();
+  const customers = db.prepare('SELECT id, name, shipto_line1, shipto_phone FROM customers').all();
   const byNorm = new Map();
   for (const c of customers) byNorm.set(normalizeName(c.name), c);
-  const upd = db.prepare(
-    overwrite
-      ? `UPDATE customers SET shipto_line1=?, shipto_line2=?, shipto_city=?, shipto_state=?, shipto_zip=? WHERE id=?`
-      : `UPDATE customers SET shipto_line1=?, shipto_line2=?, shipto_city=?, shipto_state=?, shipto_zip=? WHERE id=? AND (shipto_line1 IS NULL OR shipto_line1='')`
-  );
+  const updAddr = db.prepare('UPDATE customers SET shipto_line1=?, shipto_line2=?, shipto_city=?, shipto_state=?, shipto_zip=? WHERE id=?');
+  const updPhone = db.prepare('UPDATE customers SET shipto_phone=? WHERE id=?');
   const matched = [];
   const unmatched = [];
   for (const s of SHIPTO_SEED) {
     const c = byNorm.get(normalizeName(s.name));
-    if (c) { upd.run(s.line1, s.line2, s.city, s.state, s.zip, c.id); matched.push(s.name); }
-    else unmatched.push(s.name);
+    if (!c) { unmatched.push(s.name); continue; }
+    matched.push(s.name);
+    // Fill address if empty (or always, when overwriting).
+    if (overwrite || !c.shipto_line1) updAddr.run(s.line1, s.line2, s.city, s.state, s.zip, c.id);
+    // Fill phone if empty (or always, when overwriting) — backfills existing rows.
+    if (overwrite || !c.shipto_phone) updPhone.run(s.phone || null, c.id);
   }
   return { matched, unmatched };
 }
 
 // One-time seed on startup (guarded by a meta flag so it never overwrites edits).
 function seedShipToOnce() {
-  const FLAG = 'shipto_seed_v1';
+  const FLAG = 'shipto_seed_v2';
   const done = db.prepare('SELECT value FROM meta WHERE key = ?').get(FLAG);
   if (done) return;
   try {

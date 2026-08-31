@@ -43,7 +43,7 @@ const TP_HEADERS = [
 // everything else (Terms, addresses, etc.) is left to QuickBooks / the customer.
 const TP_COLUMNS = [
   'Customer', 'Transaction Date', 'RefNumber', 'PO Number', 'Template Name',
-  'ShipTo Line1', 'ShipTo Line2', 'ShipTo City', 'ShipTo State', 'ShipTo PostalCode',
+  'ShipTo Line1', 'ShipTo Line2', 'ShipTo Line3', 'ShipTo Line4',
   'Memo', 'Cust. Tax Code', 'Item', 'Quantity', 'FOB', 'Other', 'Other1',
   'Unit of Measure', 'AR Account', 'Sales Tax Code',
 ];
@@ -76,6 +76,12 @@ function poDate(iso) {
   if (!iso) return '';
   const [y, m, d] = iso.split('-');
   return `${m}${d}${y.slice(2)}`;
+}
+
+// Compose "City, State Zip" from an order's ship-to parts, skipping any blanks.
+function cityStateZip(order) {
+  const cs = [order.shipToCity, order.shipToState].map(v => (v || '').trim()).filter(Boolean).join(', ');
+  return [cs, (order.shipToZip || '').trim()].filter(Boolean).join(' ').trim();
 }
 
 // Today's date as ISO yyyy-mm-dd (used for the PO number = the invoice/export date).
@@ -136,12 +142,12 @@ function buildTP(orders, brandAbbrev = {}) {
         RefNumber: order.id,
         'PO Number': poNumber,
         'Template Name': '1 - HG  INV W/ UPC',
-        // Ship-to address for this specific store (from the customer record).
+        // Ship-to block, composed explicitly so it prints in this exact order:
+        //   store name / street / City, State Zip / Ph. <phone>
         'ShipTo Line1': order.shipToLine1 || '',
         'ShipTo Line2': order.shipToLine2 || '',
-        'ShipTo City': order.shipToCity || '',
-        'ShipTo State': order.shipToState || '',
-        'ShipTo PostalCode': order.shipToZip || '',
+        'ShipTo Line3': cityStateZip(order),
+        'ShipTo Line4': order.shipToPhone ? `Ph. ${order.shipToPhone}` : '',
         Memo: memo,
         // Taxable, matching the real QuickBooks invoices.
         'Cust. Tax Code': 'Tax',
