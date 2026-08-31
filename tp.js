@@ -105,9 +105,12 @@ function buildTP(orders, brandAbbrev = {}) {
   for (const order of orders) {
     const { qbName } = mapCustomer(order.customer);
     const date = formatIIFDate(order.deliveryDate);
-    // Only real (qty > 0) lines go on the invoice; check-in / zero lines are
-    // skipped so they don't create $0 invoice rows.
-    const orderLines = (order.lines || []).filter(l => (Number(l.qty) || 0) > 0);
+    const allLines = order.lines || [];
+    // Lines with a real quantity come first; out-of-stock / backorder lines
+    // (qty 0) still go on the invoice as $0 rows, sorted to the very bottom.
+    const positive = allLines.filter(l => (Number(l.qty) || 0) > 0);
+    const zeros = allLines.filter(l => (Number(l.qty) || 0) === 0);
+    const orderLines = [...positive, ...zeros];
     if (orderLines.length === 0) continue;
 
     // Invoice-level values built from the customer's abbreviation / short name.
@@ -119,8 +122,10 @@ function buildTP(orders, brandAbbrev = {}) {
     const poForMemo = poNumber ? `PO# ${poNumber}` : '';
 
     // Memo prefix: "Asst" when the order spans 2+ brands; for a single brand,
-    // that brand's abbreviation (falling back to the full brand name).
-    const brands = [...new Set(orderLines.map(l => (l.brand || String(l.id).split(':')[0] || '').trim()).filter(Boolean))];
+    // that brand's abbreviation (falling back to the full brand name). Based on
+    // the real (positive) lines so a backorder doesn't flip a single-brand order.
+    const brandBasis = positive.length > 0 ? positive : orderLines;
+    const brands = [...new Set(brandBasis.map(l => (l.brand || String(l.id).split(':')[0] || '').trim()).filter(Boolean))];
     let prefix = '';
     if (brands.length > 1) prefix = 'Asst';
     else if (brands.length === 1) prefix = brandAbbrev[brands[0]] || brands[0];
@@ -131,9 +136,9 @@ function buildTP(orders, brandAbbrev = {}) {
       memo = `${prefix ? prefix + ' ' : ''}${shortName}${poSuffix}`;
     }
 
-    // Whole-order totals (repeated on every line for the Other1/Other2 fields).
-    const totalCases = orderLines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
-    const totalEaches = orderLines.reduce((s, l) => s + eaches(l), 0);
+    // Whole-order totals (positive lines only — backorders add nothing).
+    const totalCases = positive.reduce((s, l) => s + (Number(l.qty) || 0), 0);
+    const totalEaches = positive.reduce((s, l) => s + eaches(l), 0);
 
     for (const l of orderLines) {
       const fields = {
