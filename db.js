@@ -116,6 +116,12 @@ for (const col of ['shipto_line1', 'shipto_line2', 'shipto_city', 'shipto_state'
     db.exec(`ALTER TABLE customers ADD COLUMN ${col} TEXT`);
   }
 }
+// Bill-to address (used on the printed invoice's BILL TO block).
+for (const col of ['billto_line1', 'billto_line2', 'billto_city', 'billto_state', 'billto_zip']) {
+  if (!customerColumns.includes(col)) {
+    db.exec(`ALTER TABLE customers ADD COLUMN ${col} TEXT`);
+  }
+}
 const orderColumns = db.prepare("PRAGMA table_info(orders)").all().map(c => c.name);
 if (!orderColumns.includes('notes')) {
   db.exec('ALTER TABLE orders ADD COLUMN notes TEXT');
