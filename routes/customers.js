@@ -101,4 +101,35 @@ router.patch('/:id', (req, res) => {
   res.json({ ...fresh, active: !!fresh.active });
 });
 
+// POST /api/customers/apply-addresses — apply the built-in QuickBooks-exported
+// bill-to / ship-to addresses to matching customers (by normalized name).
+// Overwrites existing bill-to/ship-to so the app matches QuickBooks. Preserves
+// the ship-to phone already stored (QB export doesn't include it here).
+router.post('/apply-addresses', (req, res) => {
+  const { CUSTOMER_ADDRESSES } = require('../customerAddresses');
+  const { normalizeName } = require('../shiptoSeed');
+  const customers = db.prepare('SELECT id, name FROM customers').all();
+  const byNorm = new Map();
+  for (const c of customers) byNorm.set(normalizeName(c.name), c);
+  const upd = db.prepare(
+    `UPDATE customers SET
+       billto_line1=?, billto_line2=?, billto_city=?, billto_state=?, billto_zip=?,
+       shipto_line1=?, shipto_line2=?, shipto_city=?, shipto_state=?, shipto_zip=?
+     WHERE id=?`
+  );
+  const matched = [], unmatched = [];
+  for (const rec of CUSTOMER_ADDRESSES) {
+    const c = byNorm.get(normalizeName(rec.name));
+    if (!c) { unmatched.push(rec.name); continue; }
+    const b = rec.bill || {}, s = rec.ship || {};
+    upd.run(
+      b.line1 || null, b.line2 || null, b.city || null, b.state || null, b.zip || null,
+      s.line1 || null, s.line2 || null, s.city || null, s.state || null, s.zip || null,
+      c.id
+    );
+    matched.push(rec.name);
+  }
+  res.json({ ok: true, matchedCount: matched.length, matched, unmatched });
+});
+
 module.exports = router;
