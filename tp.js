@@ -44,8 +44,8 @@ const TP_HEADERS = [
 const TP_COLUMNS = [
   'Customer', 'Transaction Date', 'RefNumber', 'PO Number', 'Template Name',
   'ShipTo Line1', 'ShipTo Line2', 'ShipTo Line3', 'ShipTo Line4',
-  'Memo', 'Cust. Tax Code', 'Item', 'Quantity', 'FOB', 'Other', 'Other1',
-  'Unit of Measure', 'AR Account', 'Sales Tax Code',
+  'Customer Message', 'Memo', 'Cust. Tax Code', 'Item', 'Quantity', 'FOB',
+  'Other', 'Other1', 'Unit of Measure', 'AR Account', 'Sales Tax Code',
 ];
 
 // Per-each price x pack x qty(cases) = line total; quantity is exported as eaches.
@@ -153,6 +153,7 @@ function buildTP(orders, brandAbbrev = {}) {
         'ShipTo Line2': order.shipToLine2 || '',
         'ShipTo Line3': cityStateZip(order),
         'ShipTo Line4': order.shipToPhone ? `Ph. ${order.shipToPhone}` : '',
+        'Customer Message': 'Thank you for your business.',
         Memo: memo,
         // Taxable, matching the real QuickBooks invoices.
         'Cust. Tax Code': 'Tax',
