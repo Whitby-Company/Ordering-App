@@ -140,6 +140,11 @@ if (!customerColumns.includes('catalog_on')) {
 if (!customerColumns.includes('include_default')) {
   db.exec('ALTER TABLE customers ADD COLUMN include_default INTEGER NOT NULL DEFAULT 1');
 }
+// Whether this customer shows in the mobile field-rep customer picker.
+// Defaults to 1 (on) so existing customers keep showing on mobile.
+if (!customerColumns.includes('show_on_mobile')) {
+  db.exec('ALTER TABLE customers ADD COLUMN show_on_mobile INTEGER NOT NULL DEFAULT 1');
+}
 const orderColumns = db.prepare("PRAGMA table_info(orders)").all().map(c => c.name);
 // Snapshot the per-each price on each order line so historical invoices don't
 // change if a customer's price changes later.
