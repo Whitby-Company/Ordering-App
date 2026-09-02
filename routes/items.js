@@ -13,7 +13,7 @@ const router = express.Router();
 // Optional query params: ?brand=Oberto  ?lowStockMax=5  ?includeInactive=true
 router.get('/', (req, res) => {
   const { brand, lowStockMax, includeInactive } = req.query;
-  let sql = 'SELECT id, brand, name, stock, price, pack, packLabel, imageUrl, upc, active FROM items WHERE 1=1';
+  let sql = 'SELECT id, brand, name, stock, price, pack, packLabel, imageUrl, upc, active, contains FROM items WHERE 1=1';
   const params = [];
 
   if (includeInactive !== 'true') {
@@ -29,7 +29,11 @@ router.get('/', (req, res) => {
   }
   sql += ' ORDER BY brand ASC, name ASC';
 
-  const items = db.prepare(sql).all(...params);
+  const items = db.prepare(sql).all(...params).map(it => {
+    let contains = [];
+    if (it.contains) { try { contains = JSON.parse(it.contains) || []; } catch { contains = []; } }
+    return { ...it, contains };
+  });
   res.json(items);
 });
 
@@ -69,8 +73,8 @@ router.post('/', (req, res) => {
 // (Stock corrections here are for fixing mistakes — normal stock changes
 // should happen via orders.)
 router.patch('/:id', (req, res) => {
-  const { stock, name, brand, pack, packLabel, imageUrl, upc, price, active } = req.body;
-  if (stock === undefined && name === undefined && brand === undefined && pack === undefined && packLabel === undefined && imageUrl === undefined && upc === undefined && price === undefined && active === undefined) {
+  const { stock, name, brand, pack, packLabel, imageUrl, upc, price, active, contains } = req.body;
+  if (stock === undefined && name === undefined && brand === undefined && pack === undefined && packLabel === undefined && imageUrl === undefined && upc === undefined && price === undefined && active === undefined && contains === undefined) {
     return res.status(400).json({ error: 'At least one field must be provided' });
   }
   if (stock !== undefined && Number.isNaN(Number(stock))) {
@@ -103,6 +107,16 @@ router.patch('/:id', (req, res) => {
   if (upc !== undefined) { updates.push('upc = ?'); params.push((upc == null ? '' : String(upc)).trim() || null); }
   if (price !== undefined) { updates.push('price = ?'); params.push(Number(price)); }
   if (active !== undefined) { updates.push('active = ?'); params.push(active ? 1 : 0); }
+  if (contains !== undefined) {
+    // Normalize to an array of {qty, name, upc}; store as JSON (null if empty).
+    let arr = [];
+    if (Array.isArray(contains)) {
+      arr = contains
+        .map(x => ({ qty: Number(x.qty) || 0, name: String(x.name || '').trim(), upc: String(x.upc || '').trim() }))
+        .filter(x => x.name || x.upc || x.qty);
+    }
+    updates.push('contains = ?'); params.push(arr.length ? JSON.stringify(arr) : null);
+  }
   params.push(req.params.id);
 
   const info = db.prepare(`UPDATE items SET ${updates.join(', ')} WHERE id = ?`).run(...params);
@@ -118,6 +132,10 @@ router.patch('/:id', (req, res) => {
   if (upc !== undefined) result.upc = (upc == null ? '' : String(upc)).trim() || null;
   if (price !== undefined) result.price = Number(price);
   if (active !== undefined) result.active = active;
+  if (contains !== undefined) {
+    const row = db.prepare('SELECT contains FROM items WHERE id = ?').get(req.params.id);
+    try { result.contains = row && row.contains ? JSON.parse(row.contains) : []; } catch { result.contains = []; }
+  }
   res.json(result);
 });
 

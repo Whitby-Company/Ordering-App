@@ -88,6 +88,11 @@ if (!itemColumns.includes('pack')) {
 if (!itemColumns.includes('packLabel')) {
   db.exec('ALTER TABLE items ADD COLUMN packLabel TEXT');
 }
+if (!itemColumns.includes('contains')) {
+  // JSON array of contained sub-items for shipper products, each
+  // { qty, name, upc } — printed under the item on the invoice.
+  db.exec('ALTER TABLE items ADD COLUMN contains TEXT');
+}
 if (!itemColumns.includes('imageUrl')) {
   db.exec('ALTER TABLE items ADD COLUMN imageUrl TEXT');
 }
