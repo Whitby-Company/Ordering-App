@@ -19,7 +19,7 @@ router.get('/', (req, res) => {
     .all();
 
   const lineStmt = db.prepare(
-    `SELECT ol.item_id as id, i.name, i.brand, i.price, i.pack, i.upc, ol.qty
+    `SELECT ol.item_id as id, i.name, i.brand, COALESCE(ol.price, i.price) as price, i.pack, i.upc, ol.qty
      FROM order_lines ol
      JOIN items i ON i.id = ol.item_id
      WHERE ol.order_id = ?`
@@ -37,7 +37,7 @@ router.get('/', (req, res) => {
 // for a single order. GET /api/orders/iif?ids=1,2,3 exports several at once.
 function fetchOrdersForIIF(ids) {
   const lineStmt = db.prepare(
-    `SELECT ol.item_id as id, i.name, i.brand, i.price, i.pack, i.upc, ol.qty
+    `SELECT ol.item_id as id, i.name, i.brand, COALESCE(ol.price, i.price) as price, i.pack, i.upc, ol.qty
      FROM order_lines ol JOIN items i ON i.id = ol.item_id
      WHERE ol.order_id = ?`
   );
@@ -214,8 +214,15 @@ router.post('/', (req, res) => {
   const insertOrder = db.prepare(
     'INSERT INTO orders (customer_id, delivery_date, submitted_at, notes, submitted_by, status) VALUES (?, ?, ?, ?, ?, ?)'
   );
-  const insertLine = db.prepare('INSERT INTO order_lines (order_id, item_id, qty) VALUES (?, ?, ?)');
+  const insertLine = db.prepare('INSERT INTO order_lines (order_id, item_id, qty, price) VALUES (?, ?, ?, ?)');
   const decrementStock = db.prepare('UPDATE items SET stock = stock - ? WHERE id = ?');
+  // A customer's per-each price for an item: their catalog override if set,
+  // otherwise the item's base price. Snapshotted onto the order line.
+  const custPriceStmt = db.prepare('SELECT price FROM customer_catalog WHERE customer_id = ? AND item_id = ?');
+  const priceFor = (item) => {
+    const row = custPriceStmt.get(customerId, item.id);
+    return (row && row.price != null) ? row.price : item.price;
+  };
 
   const submittedAt = new Date().toISOString();
   const cleanNotes = (typeof notes === 'string' && notes.trim()) ? notes.trim() : null;
@@ -226,7 +233,7 @@ router.post('/', (req, res) => {
     const orderInfo = insertOrder.run(customerId, deliveryDate, submittedAt, cleanNotes, cleanSubmittedBy, status);
     const orderId = orderInfo.lastInsertRowid;
     for (const { item, qty } of resolvedLines) {
-      insertLine.run(orderId, item.id, qty);
+      insertLine.run(orderId, item.id, qty, priceFor(item));
       if (!isPending) decrementStock.run(qty, item.id); // pending drafts don't reserve stock
     }
     return orderId;
@@ -303,8 +310,10 @@ router.patch('/:id', (req, res) => {
 
   const adjustStock = db.prepare('UPDATE items SET stock = stock + ? WHERE id = ?');
   const deleteLines = db.prepare('DELETE FROM order_lines WHERE order_id = ?');
-  const insertLine = db.prepare('INSERT INTO order_lines (order_id, item_id, qty) VALUES (?, ?, ?)');
+  const insertLine = db.prepare('INSERT INTO order_lines (order_id, item_id, qty, price) VALUES (?, ?, ?, ?)');
   const updateOrder = db.prepare('UPDATE orders SET customer_id = ?, delivery_date = ?, notes = ? WHERE id = ?');
+  const custPriceStmt = db.prepare('SELECT price FROM customer_catalog WHERE customer_id = ? AND item_id = ?');
+  const priceFor = (item) => { const r = custPriceStmt.get(customerId, item.id); return (r && r.price != null) ? r.price : item.price; };
 
   const cleanNotes = (typeof notes === 'string' && notes.trim()) ? notes.trim() : null;
   const run = db.transaction(() => {
@@ -318,7 +327,7 @@ router.patch('/:id', (req, res) => {
       }
     }
     deleteLines.run(orderId);
-    for (const { item, qty } of resolvedLines) insertLine.run(orderId, item.id, qty);
+    for (const { item, qty } of resolvedLines) insertLine.run(orderId, item.id, qty, priceFor(item));
     updateOrder.run(customerId, deliveryDate, cleanNotes, orderId);
   });
   run();
@@ -330,7 +339,7 @@ router.patch('/:id', (req, res) => {
      FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = ?`
   ).get(orderId);
   const newLines = db.prepare(
-    `SELECT ol.item_id as id, i.name, i.brand, i.price, i.pack, i.upc, ol.qty
+    `SELECT ol.item_id as id, i.name, i.brand, COALESCE(ol.price, i.price) as price, i.pack, i.upc, ol.qty
      FROM order_lines ol JOIN items i ON i.id = ol.item_id WHERE ol.order_id = ?`
   ).all(orderId);
 
