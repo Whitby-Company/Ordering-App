@@ -275,4 +275,11 @@ router.post('/:id/image', (req, res) => {
   res.json({ id: req.params.id, imageUrl });
 });
 
+// POST /api/items/activate-all — make every inactive item active again.
+// Returns how many were changed. (One-time bulk action.)
+router.post('/activate-all', (req, res) => {
+  const r = db.prepare('UPDATE items SET active = 1 WHERE active = 0').run();
+  res.json({ ok: true, activated: r.changes });
+});
+
 module.exports = router;
