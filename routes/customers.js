@@ -107,6 +107,32 @@ router.patch('/:id', (req, res) => {
 // the ship-to phone already stored (QB export doesn't include it here).
 // POST /api/customers/set-times-billto — set the bill-to on every "Times ..."
 // store to the central Times Supermarket address. One-time bulk action.
+// GET /api/customers/address-audit — list active customers missing a bill-to
+// or ship-to address, so gaps are easy to spot.
+router.get('/address-audit', (req, res) => {
+  const rows = db.prepare(
+    `SELECT id, name, active,
+            billto_line1 as b1, billto_city as bc, billto_state as bs, billto_zip as bz,
+            shipto_line1 as s1, shipto_city as sc, shipto_state as ss, shipto_zip as sz
+     FROM customers ORDER BY name`
+  ).all();
+  const has = (...vals) => vals.some(v => v != null && String(v).trim() !== '');
+  const missingBill = [], missingShip = [], missingBoth = [];
+  for (const r of rows) {
+    if (!r.active) continue;
+    const hasBill = has(r.b1) || has(r.bc, r.bs, r.bz);
+    const hasShip = has(r.s1) || has(r.sc, r.ss, r.sz);
+    if (!hasBill && !hasShip) missingBoth.push(r.name);
+    else { if (!hasBill) missingBill.push(r.name); if (!hasShip) missingShip.push(r.name); }
+  }
+  res.json({
+    activeCustomers: rows.filter(r => r.active).length,
+    missingBillToCount: missingBill.length + missingBoth.length,
+    missingShipToCount: missingShip.length + missingBoth.length,
+    missingBoth, missingBillTo: missingBill, missingShipTo: missingShip,
+  });
+});
+
 router.post('/set-times-billto', (req, res) => {
   const stores = db.prepare("SELECT id, name FROM customers WHERE name LIKE 'Times%'").all();
   const upd = db.prepare(
