@@ -93,6 +93,10 @@ if (!itemColumns.includes('contains')) {
   // { qty, name, upc } — printed under the item on the invoice.
   db.exec('ALTER TABLE items ADD COLUMN contains TEXT');
 }
+if (!itemColumns.includes('is_default')) {
+  // 1 = item is part of the default catalog (the base set most stores carry).
+  db.exec('ALTER TABLE items ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0');
+}
 if (!itemColumns.includes('imageUrl')) {
   db.exec('ALTER TABLE items ADD COLUMN imageUrl TEXT');
 }
@@ -127,6 +131,15 @@ for (const col of ['billto_line1', 'billto_line2', 'billto_city', 'billto_state'
     db.exec(`ALTER TABLE customers ADD COLUMN ${col} TEXT`);
   }
 }
+// Per-store catalog: catalog_on = whether this customer has a catalog set up
+// (0 = shows nothing in the field until configured); include_default = whether
+// the default catalog is part of their effective catalog.
+if (!customerColumns.includes('catalog_on')) {
+  db.exec('ALTER TABLE customers ADD COLUMN catalog_on INTEGER NOT NULL DEFAULT 0');
+}
+if (!customerColumns.includes('include_default')) {
+  db.exec('ALTER TABLE customers ADD COLUMN include_default INTEGER NOT NULL DEFAULT 1');
+}
 const orderColumns = db.prepare("PRAGMA table_info(orders)").all().map(c => c.name);
 if (!orderColumns.includes('notes')) {
   db.exec('ALTER TABLE orders ADD COLUMN notes TEXT');
@@ -147,6 +160,37 @@ if (!orderColumns.includes('status')) {
 
 // Small key/value table for one-time migrations / flags.
 db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)');
+
+// Per-store catalog overrides. present=1 -> add this item to the store's
+// catalog; present=0 -> remove it (even if it's in the default set).
+db.exec(`CREATE TABLE IF NOT EXISTS customer_catalog (
+  customer_id INTEGER NOT NULL,
+  item_id TEXT NOT NULL,
+  present INTEGER NOT NULL,
+  PRIMARY KEY (customer_id, item_id)
+)`);
+
+// One-time catalog rollout: mark all currently-active items as default, and
+// turn the catalog on for all currently-active customers (so existing field
+// customers keep seeing the full set). New items/customers stay off default /
+// catalog-off until configured.
+function seedCatalogOnce() {
+  const FLAG = 'catalog_seed_v1';
+  if (db.prepare('SELECT value FROM meta WHERE key = ?').get(FLAG)) return;
+  try {
+    const itemCount = db.prepare('SELECT COUNT(*) n FROM items WHERE active = 1').get().n;
+    const custCount = db.prepare('SELECT COUNT(*) n FROM customers WHERE active = 1').get().n;
+    // Don't lock the flag against an empty DB (e.g. during initial seeding).
+    if (itemCount === 0 && custCount === 0) return;
+    db.prepare('UPDATE items SET is_default = 1 WHERE active = 1').run();
+    const r = db.prepare('UPDATE customers SET catalog_on = 1, include_default = 1 WHERE active = 1').run();
+    db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(FLAG, String(r.changes));
+    console.log(`Catalog seed: activated ${r.changes} customer(s); default set = ${itemCount} active items.`);
+  } catch (err) {
+    console.error('Catalog seed skipped:', err.message);
+  }
+}
+seedCatalogOnce();
 
 // Apply the built-in ship-to addresses, matching customers by normalized name.
 // Returns { matched: [...names], unmatched: [...names] }. By default only fills
@@ -195,3 +239,4 @@ seedShipToOnce();
 module.exports = db;
 module.exports.seedShipToOnce = seedShipToOnce;
 module.exports.applyShipToSeed = applyShipToSeed;
+module.exports.seedCatalogOnce = seedCatalogOnce;

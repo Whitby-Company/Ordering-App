@@ -13,7 +13,7 @@ const router = express.Router();
 // Optional query params: ?brand=Oberto  ?lowStockMax=5  ?includeInactive=true
 router.get('/', (req, res) => {
   const { brand, lowStockMax, includeInactive } = req.query;
-  let sql = 'SELECT id, brand, name, stock, price, pack, packLabel, imageUrl, upc, active, contains FROM items WHERE 1=1';
+  let sql = 'SELECT id, brand, name, stock, price, pack, packLabel, imageUrl, upc, active, contains, is_default as isDefault FROM items WHERE 1=1';
   const params = [];
 
   if (includeInactive !== 'true') {
@@ -73,8 +73,8 @@ router.post('/', (req, res) => {
 // (Stock corrections here are for fixing mistakes — normal stock changes
 // should happen via orders.)
 router.patch('/:id', (req, res) => {
-  const { stock, name, brand, pack, packLabel, imageUrl, upc, price, active, contains } = req.body;
-  if (stock === undefined && name === undefined && brand === undefined && pack === undefined && packLabel === undefined && imageUrl === undefined && upc === undefined && price === undefined && active === undefined && contains === undefined) {
+  const { stock, name, brand, pack, packLabel, imageUrl, upc, price, active, contains, isDefault } = req.body;
+  if (stock === undefined && name === undefined && brand === undefined && pack === undefined && packLabel === undefined && imageUrl === undefined && upc === undefined && price === undefined && active === undefined && contains === undefined && isDefault === undefined) {
     return res.status(400).json({ error: 'At least one field must be provided' });
   }
   if (stock !== undefined && Number.isNaN(Number(stock))) {
@@ -107,6 +107,7 @@ router.patch('/:id', (req, res) => {
   if (upc !== undefined) { updates.push('upc = ?'); params.push((upc == null ? '' : String(upc)).trim() || null); }
   if (price !== undefined) { updates.push('price = ?'); params.push(Number(price)); }
   if (active !== undefined) { updates.push('active = ?'); params.push(active ? 1 : 0); }
+  if (isDefault !== undefined) { updates.push('is_default = ?'); params.push(isDefault ? 1 : 0); }
   if (contains !== undefined) {
     // Normalize to an array of {qty, name, upc}; store as JSON (null if empty).
     let arr = [];

@@ -10,8 +10,8 @@ const router = express.Router();
 router.get('/', (req, res) => {
   const { includeInactive } = req.query;
   const sql = includeInactive === 'true'
-    ? 'SELECT id, name, active, delivery_day as deliveryDay, abbreviation, short_name as shortName, shipto_line1 as shipToLine1, shipto_line2 as shipToLine2, shipto_city as shipToCity, shipto_state as shipToState, shipto_zip as shipToZip, shipto_phone as shipToPhone, billto_line1 as billToLine1, billto_line2 as billToLine2, billto_city as billToCity, billto_state as billToState, billto_zip as billToZip FROM customers ORDER BY name ASC'
-    : 'SELECT id, name, active, delivery_day as deliveryDay, abbreviation, short_name as shortName, shipto_line1 as shipToLine1, shipto_line2 as shipToLine2, shipto_city as shipToCity, shipto_state as shipToState, shipto_zip as shipToZip, shipto_phone as shipToPhone, billto_line1 as billToLine1, billto_line2 as billToLine2, billto_city as billToCity, billto_state as billToState, billto_zip as billToZip FROM customers WHERE active = 1 ORDER BY name ASC';
+    ? 'SELECT id, name, active, delivery_day as deliveryDay, abbreviation, short_name as shortName, shipto_line1 as shipToLine1, shipto_line2 as shipToLine2, shipto_city as shipToCity, shipto_state as shipToState, shipto_zip as shipToZip, shipto_phone as shipToPhone, billto_line1 as billToLine1, billto_line2 as billToLine2, billto_city as billToCity, billto_state as billToState, billto_zip as billToZip, catalog_on as catalogOn, include_default as includeDefault FROM customers ORDER BY name ASC'
+    : 'SELECT id, name, active, delivery_day as deliveryDay, abbreviation, short_name as shortName, shipto_line1 as shipToLine1, shipto_line2 as shipToLine2, shipto_city as shipToCity, shipto_state as shipToState, shipto_zip as shipToZip, shipto_phone as shipToPhone, billto_line1 as billToLine1, billto_line2 as billToLine2, billto_city as billToCity, billto_state as billToState, billto_zip as billToZip, catalog_on as catalogOn, include_default as includeDefault FROM customers WHERE active = 1 ORDER BY name ASC';
   const customers = db.prepare(sql).all();
   res.json(customers);
 });
@@ -97,7 +97,7 @@ router.patch('/:id', (req, res) => {
     throw err;
   }
 
-  const fresh = db.prepare('SELECT id, name, active, delivery_day as deliveryDay, abbreviation, short_name as shortName, shipto_line1 as shipToLine1, shipto_line2 as shipToLine2, shipto_city as shipToCity, shipto_state as shipToState, shipto_zip as shipToZip, shipto_phone as shipToPhone, billto_line1 as billToLine1, billto_line2 as billToLine2, billto_city as billToCity, billto_state as billToState, billto_zip as billToZip FROM customers WHERE id = ?').get(req.params.id);
+  const fresh = db.prepare('SELECT id, name, active, delivery_day as deliveryDay, abbreviation, short_name as shortName, shipto_line1 as shipToLine1, shipto_line2 as shipToLine2, shipto_city as shipToCity, shipto_state as shipToState, shipto_zip as shipToZip, shipto_phone as shipToPhone, billto_line1 as billToLine1, billto_line2 as billToLine2, billto_city as billToCity, billto_state as billToState, billto_zip as billToZip, catalog_on as catalogOn, include_default as includeDefault FROM customers WHERE id = ?').get(req.params.id);
   res.json({ ...fresh, active: !!fresh.active });
 });
 
@@ -130,6 +130,61 @@ router.post('/apply-addresses', (req, res) => {
     matched.push(rec.name);
   }
   res.json({ ok: true, matchedCount: matched.length, matched, unmatched });
+});
+
+// Compute a customer's effective catalog item ids:
+// (default items if include_default) + explicit adds - explicit removes.
+function effectiveCatalogIds(customerId) {
+  const cust = db.prepare('SELECT catalog_on, include_default FROM customers WHERE id = ?').get(customerId);
+  if (!cust) return null;
+  const set = new Set();
+  if (cust.include_default) {
+    for (const r of db.prepare('SELECT id FROM items WHERE is_default = 1 AND active = 1').all()) set.add(r.id);
+  }
+  const overrides = db.prepare('SELECT item_id, present FROM customer_catalog WHERE customer_id = ?').all(customerId);
+  for (const o of overrides) { if (o.present) set.add(o.item_id); else set.delete(o.item_id); }
+  return { catalogOn: !!cust.catalog_on, includeDefault: !!cust.include_default, itemIds: [...set] };
+}
+
+// GET /api/customers/:id/catalog — the store's catalog state + effective item ids.
+router.get('/:id/catalog', (req, res) => {
+  const result = effectiveCatalogIds(req.params.id);
+  if (!result) return res.status(404).json({ error: 'Customer not found' });
+  const overrides = db.prepare('SELECT item_id, present FROM customer_catalog WHERE customer_id = ?').all(req.params.id);
+  res.json({ ...result, overrides });
+});
+
+// PATCH /api/customers/:id/catalog — set catalog_on and/or include_default.
+router.patch('/:id/catalog', (req, res) => {
+  const { catalogOn, includeDefault } = req.body;
+  const existing = db.prepare('SELECT id FROM customers WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Customer not found' });
+  const sets = [], params = [];
+  if (typeof catalogOn === 'boolean') { sets.push('catalog_on = ?'); params.push(catalogOn ? 1 : 0); }
+  if (typeof includeDefault === 'boolean') { sets.push('include_default = ?'); params.push(includeDefault ? 1 : 0); }
+  if (!sets.length) return res.status(400).json({ error: 'Provide catalogOn and/or includeDefault (boolean)' });
+  params.push(req.params.id);
+  db.prepare(`UPDATE customers SET ${sets.join(', ')} WHERE id = ?`).run(...params);
+  res.json(effectiveCatalogIds(req.params.id));
+});
+
+// PUT /api/customers/:id/catalog/items — set overrides for a set of items.
+// body: { add: [ids], remove: [ids], clear: [ids] } — clear removes the override
+// (item reverts to default behavior).
+router.put('/:id/catalog/items', (req, res) => {
+  const existing = db.prepare('SELECT id FROM customers WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Customer not found' });
+  const cid = Number(req.params.id);
+  const { add = [], remove = [], clear = [] } = req.body || {};
+  const up = db.prepare('INSERT INTO customer_catalog (customer_id, item_id, present) VALUES (?,?,?) ON CONFLICT(customer_id, item_id) DO UPDATE SET present = excluded.present');
+  const del = db.prepare('DELETE FROM customer_catalog WHERE customer_id = ? AND item_id = ?');
+  const tx = db.transaction(() => {
+    for (const id of add) up.run(cid, id, 1);
+    for (const id of remove) up.run(cid, id, 0);
+    for (const id of clear) del.run(cid, id);
+  });
+  tx();
+  res.json(effectiveCatalogIds(cid));
 });
 
 module.exports = router;

@@ -41,6 +41,8 @@ run();
 
 // Now that customers exist, fill in their built-in ship-to addresses.
 if (typeof db.seedShipToOnce === 'function') db.seedShipToOnce();
+// Roll out the per-store catalog defaults (mark active items default, activate customers).
+if (typeof db.seedCatalogOnce === 'function') db.seedCatalogOnce();
 
 const activeItems = data.items.filter(i => i.active !== false).length;
 const activeCustomers = data.customers.filter(c => c.active !== false).length;
