@@ -248,4 +248,22 @@ router.post('/apply-catalogs', (req, res) => {
   res.json({ ok: true, ...report });
 });
 
+// PUT /api/customers/:id/catalog/price — set (or clear) a customer's per-each
+// price for an item. Ensures the item is in the catalog (present=1). price=null
+// clears the custom price (reverts to base). 
+router.put('/:id/catalog/price', (req, res) => {
+  const cid = Number(req.params.id);
+  const { itemId, price } = req.body || {};
+  if (!itemId) return res.status(400).json({ error: 'itemId required' });
+  const existing = db.prepare('SELECT id FROM customers WHERE id = ?').get(cid);
+  if (!existing) return res.status(404).json({ error: 'Customer not found' });
+  const p = (price === '' || price === null || price === undefined) ? null : Number(price);
+  if (p !== null && (Number.isNaN(p) || p < 0)) return res.status(400).json({ error: 'price must be a non-negative number or null' });
+  db.prepare(
+    `INSERT INTO customer_catalog (customer_id, item_id, present, price) VALUES (?,?,1,?)
+     ON CONFLICT(customer_id, item_id) DO UPDATE SET price = excluded.price, present = 1`
+  ).run(cid, itemId, p);
+  res.json({ ok: true, itemId, price: p });
+});
+
 module.exports = router;
