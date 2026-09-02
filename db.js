@@ -167,8 +167,14 @@ db.exec(`CREATE TABLE IF NOT EXISTS customer_catalog (
   customer_id INTEGER NOT NULL,
   item_id TEXT NOT NULL,
   present INTEGER NOT NULL,
+  price REAL,                    -- per-each price for this customer (NULL = use item base price)
   PRIMARY KEY (customer_id, item_id)
 )`);
+// Migration-safe: add price column if the table pre-existed without it.
+{
+  const cc = db.prepare("PRAGMA table_info(customer_catalog)").all().map(c => c.name);
+  if (!cc.includes('price')) db.exec('ALTER TABLE customer_catalog ADD COLUMN price REAL');
+}
 
 // One-time catalog rollout: mark all currently-active items as default, and
 // turn the catalog on for all currently-active customers (so existing field
