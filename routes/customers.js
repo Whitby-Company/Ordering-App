@@ -105,6 +105,17 @@ router.patch('/:id', (req, res) => {
 // bill-to / ship-to addresses to matching customers (by normalized name).
 // Overwrites existing bill-to/ship-to so the app matches QuickBooks. Preserves
 // the ship-to phone already stored (QB export doesn't include it here).
+// POST /api/customers/set-times-billto — set the bill-to on every "Times ..."
+// store to the central Times Supermarket address. One-time bulk action.
+router.post('/set-times-billto', (req, res) => {
+  const stores = db.prepare("SELECT id, name FROM customers WHERE name LIKE 'Times%'").all();
+  const upd = db.prepare(
+    `UPDATE customers SET billto_line1=?, billto_line2=?, billto_city=?, billto_state=?, billto_zip=? WHERE id=?`
+  );
+  for (const s of stores) upd.run('Times Supermarket', '801 Kaheka St.', 'Honolulu', 'HI', '96814', s.id);
+  res.json({ ok: true, updated: stores.length, stores: stores.map(s => s.name) });
+});
+
 router.post('/apply-addresses', (req, res) => {
   const { CUSTOMER_ADDRESSES } = require('../customerAddresses');
   const { normalizeName } = require('../shiptoSeed');
