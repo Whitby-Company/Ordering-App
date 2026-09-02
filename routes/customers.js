@@ -187,4 +187,65 @@ router.put('/:id/catalog/items', (req, res) => {
   res.json(effectiveCatalogIds(cid));
 });
 
+// POST /api/customers/apply-catalogs — load the QuickBooks-derived per-store
+// catalogs + prices. For each matched customer: catalog_on=1, include_default=0,
+// and add each matched item as an override with a per-each price (converted from
+// the line's unit using the live item's pack). Reports matched/unmatched.
+router.post('/apply-catalogs', (req, res) => {
+  const { CUSTOMER_CATALOGS } = require('../customerCatalogs');
+  const { normalizeName } = require('../shiptoSeed');
+
+  // Lookup helpers against the LIVE data.
+  const customers = db.prepare('SELECT id, name FROM customers').all();
+  const custByNorm = new Map();
+  for (const c of customers) custByNorm.set(normalizeName(c.name), c);
+  const items = db.prepare('SELECT id, pack FROM items').all();
+  const itemById = new Map();
+  const normId = s => String(s).trim().toLowerCase();
+  const itemByNorm = new Map();
+  for (const it of items) { itemById.set(it.id, it); itemByNorm.set(normId(it.id), it); }
+  const matchItem = sku => {
+    const cands = [sku, sku.toLowerCase().endsWith('c') ? sku.slice(0, -1) : sku + 'c'];
+    for (const v of cands) { const hit = itemByNorm.get(normId(v)); if (hit) return hit; }
+    return null;
+  };
+  // Convert a line's unit price to per-each using the item's pack.
+  const perEach = (unit, unitPrice, pack) => {
+    if (unitPrice == null) return null;
+    const p = Number(pack) || 1;
+    if (unit === 'ea') return unitPrice;
+    if (unit === 'cs') return p ? unitPrice / p : null;
+    return null; // bx/plt/lbs: leave price unset -> base price used
+  };
+
+  const setCat = db.prepare('UPDATE customers SET catalog_on = 1, include_default = 0 WHERE id = ?');
+  const clearCat = db.prepare('DELETE FROM customer_catalog WHERE customer_id = ?');
+  const addCat = db.prepare('INSERT INTO customer_catalog (customer_id, item_id, present, price) VALUES (?,?,1,?) ON CONFLICT(customer_id, item_id) DO UPDATE SET present=1, price=excluded.price');
+
+  const report = { customersMatched: 0, customersUnmatched: [], itemsAdded: 0, itemsUnmatched: 0, pricesSet: 0 };
+  const unmatchedSkus = new Set();
+
+  const tx = db.transaction(() => {
+    for (const [name, entries] of Object.entries(CUSTOMER_CATALOGS)) {
+      const cust = custByNorm.get(normalizeName(name));
+      if (!cust) { report.customersUnmatched.push(name); continue; }
+      report.customersMatched++;
+      setCat.run(cust.id);
+      clearCat.run(cust.id); // rebuild from the QB history
+      for (const e of entries) {
+        const it = matchItem(e.sku);
+        if (!it) { report.itemsUnmatched++; unmatchedSkus.add(e.sku); continue; }
+        const price = perEach(e.unit, e.unitPrice, it.pack);
+        const rounded = price == null ? null : Math.round(price * 10000) / 10000;
+        addCat.run(cust.id, it.id, rounded);
+        report.itemsAdded++;
+        if (rounded != null) report.pricesSet++;
+      }
+    }
+  });
+  tx();
+  report.unmatchedSkuSample = [...unmatchedSkus].slice(0, 40);
+  res.json({ ok: true, ...report });
+});
+
 module.exports = router;
