@@ -19,7 +19,7 @@ router.get('/', (req, res) => {
     .all();
 
   const lineStmt = db.prepare(
-    `SELECT ol.item_id as id, i.name, i.brand, COALESCE(ol.price, i.price) as price, i.pack, i.upc, ol.qty
+    `SELECT ol.item_id as id, i.name, i.brand, COALESCE(ol.price, i.price) as price, COALESCE(ol.pack, i.pack) as pack, ol.unit, i.upc, ol.qty
      FROM order_lines ol
      JOIN items i ON i.id = ol.item_id
      WHERE ol.order_id = ?`
@@ -37,7 +37,7 @@ router.get('/', (req, res) => {
 // for a single order. GET /api/orders/iif?ids=1,2,3 exports several at once.
 function fetchOrdersForIIF(ids) {
   const lineStmt = db.prepare(
-    `SELECT ol.item_id as id, i.name, i.brand, COALESCE(ol.price, i.price) as price, i.pack, i.upc, ol.qty
+    `SELECT ol.item_id as id, i.name, i.brand, COALESCE(ol.price, i.price) as price, COALESCE(ol.pack, i.pack) as pack, ol.unit, i.upc, ol.qty
      FROM order_lines ol JOIN items i ON i.id = ol.item_id
      WHERE ol.order_id = ?`
   );
@@ -327,7 +327,7 @@ router.patch('/:id', (req, res) => {
      FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = ?`
   ).get(orderId);
   const newLines = db.prepare(
-    `SELECT ol.item_id as id, i.name, i.brand, COALESCE(ol.price, i.price) as price, i.pack, i.upc, ol.qty
+    `SELECT ol.item_id as id, i.name, i.brand, COALESCE(ol.price, i.price) as price, COALESCE(ol.pack, i.pack) as pack, ol.unit, i.upc, ol.qty
      FROM order_lines ol JOIN items i ON i.id = ol.item_id WHERE ol.order_id = ?`
   ).all(orderId);
 
