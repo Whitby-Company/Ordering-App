@@ -153,12 +153,7 @@ router.patch('/:id/submit', (req, res) => {
     `SELECT ol.item_id, ol.qty, i.name, i.stock FROM order_lines ol
      JOIN items i ON i.id = ol.item_id WHERE ol.order_id = ?`
   ).all(id);
-  // Stock check before writing anything.
-  for (const l of lines) {
-    if (l.qty > 0 && l.qty > l.stock) {
-      return res.status(409).json({ error: `Not enough stock for "${l.name}" — ${l.stock} available, ${l.qty} requested` });
-    }
-  }
+  // Stock may go negative (orders are placed before restock), so no cap here.
   const decrementStock = db.prepare('UPDATE items SET stock = stock - ? WHERE id = ?');
   const submittedAt = new Date().toISOString();
   const run = db.transaction(() => {
@@ -299,17 +294,7 @@ router.patch('/:id', (req, res) => {
   // increase can't exceed what's currently available (current stock
   // already excludes what this order originally reserved). Pending orders
   // haven't reserved any stock, so no check applies to them.
-  if (!isPending) {
-    for (const { item, qty } of resolvedLines) {
-      const oldQty = oldQtyByItem[item.id] || 0;
-      const increase = qty - oldQty;
-      if (increase > 0 && increase > item.stock) {
-        return res.status(409).json({
-          error: `Not enough stock for "${item.name}" — ${item.stock} available, ${increase} more needed`,
-        });
-      }
-    }
-  }
+  // Stock may go negative (orders placed before restock), so no cap on edits.
 
   const adjustStock = db.prepare('UPDATE items SET stock = stock + ? WHERE id = ?');
   const deleteLines = db.prepare('DELETE FROM order_lines WHERE order_id = ?');
