@@ -384,4 +384,34 @@ router.post('/invoice-start', (req, res) => {
   res.json({ ok: true, ...db.setInvoiceStart(next) });
 });
 
+// GET /api/orders/ordered-report?from=YYYY-MM-DD&to=YYYY-MM-DD
+// Sum of quantities/eaches per item across orders SUBMITTED in the date range
+// (inclusive). Handy for "what went out on these days".
+router.get('/ordered-report', (req, res) => {
+  const from = String(req.query.from || '').slice(0, 10);
+  const to = String(req.query.to || from).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+    return res.status(400).json({ error: 'Provide from (and optional to) as YYYY-MM-DD' });
+  }
+  // submitted_at is an ISO timestamp; compare its date part.
+  const rows = db.prepare(
+    `SELECT i.id AS itemId, i.name, i.brand,
+            SUM(ol.qty) AS qty,
+            SUM(ol.qty * COALESCE(ol.pack, i.pack, 1)) AS eaches,
+            COUNT(DISTINCT o.id) AS orders
+       FROM orders o
+       JOIN order_lines ol ON ol.order_id = o.id
+       JOIN items i ON i.id = ol.item_id
+      WHERE substr(o.submitted_at, 1, 10) BETWEEN ? AND ?
+        AND o.status = 'submitted'
+      GROUP BY i.id
+      HAVING SUM(ol.qty) > 0
+      ORDER BY i.brand, i.name`
+  ).all(from, to);
+  const orderCount = db.prepare(
+    `SELECT COUNT(*) n FROM orders WHERE substr(submitted_at,1,10) BETWEEN ? AND ? AND status='submitted'`
+  ).get(from, to).n;
+  res.json({ from, to, orders: orderCount, itemCount: rows.length, items: rows });
+});
+
 module.exports = router;
