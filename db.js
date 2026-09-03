@@ -194,6 +194,10 @@ if (!orderColumns.includes('status')) {
 if (!orderColumns.includes('po_number')) {
   db.exec('ALTER TABLE orders ADD COLUMN po_number TEXT');
 }
+// Custom invoice number override (blank = auto id + offset).
+if (!orderColumns.includes('invoice_number')) {
+  db.exec('ALTER TABLE orders ADD COLUMN invoice_number INTEGER');
+}
 
 // Small key/value table for one-time migrations / flags.
 db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)');
