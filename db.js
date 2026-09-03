@@ -159,6 +159,10 @@ if (!customerColumns.includes('include_default')) {
 if (!customerColumns.includes('show_on_mobile')) {
   db.exec('ALTER TABLE customers ADD COLUMN show_on_mobile INTEGER NOT NULL DEFAULT 1');
 }
+// Payment terms shown on the invoice (e.g. "1% 10 Net 11", "Net 30").
+if (!customerColumns.includes('terms')) {
+  db.exec('ALTER TABLE customers ADD COLUMN terms TEXT');
+}
 const orderColumns = db.prepare("PRAGMA table_info(orders)").all().map(c => c.name);
 // Snapshot the per-each price on each order line so historical invoices don't
 // change if a customer's price changes later.
