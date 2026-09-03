@@ -458,4 +458,46 @@ router.post('/subtract-ordered', (req, res) => {
   });
 });
 
+// GET /api/orders/sales-by-month?from=YYYY-MM&to=YYYY-MM
+// Per-item sales broken out by month (by DELIVERY date) across the range.
+// Returns months + rows: { itemId, name, brand, byMonth: {YYYY-MM: {qty, eaches, dollars}}, total }.
+router.get('/sales-by-month', (req, res) => {
+  const from = String(req.query.from || '').slice(0, 7); // YYYY-MM
+  const to = String(req.query.to || from).slice(0, 7);
+  if (!/^\d{4}-\d{2}$/.test(from) || !/^\d{4}-\d{2}$/.test(to)) {
+    return res.status(400).json({ error: 'Provide from (and optional to) as YYYY-MM' });
+  }
+  // list of month keys in range
+  const months = [];
+  { let [y, m] = from.split('-').map(Number); const [ty, tm] = to.split('-').map(Number);
+    while (y < ty || (y === ty && m <= tm)) { months.push(`${y}-${String(m).padStart(2, '0')}`); m++; if (m > 12) { m = 1; y++; } if (months.length > 240) break; } }
+
+  const rows = db.prepare(
+    `SELECT i.id AS itemId, i.name, i.brand,
+            substr(o.delivery_date, 1, 7) AS ym,
+            SUM(ol.qty) AS qty,
+            SUM(ol.qty * COALESCE(ol.pack, i.pack, 1)) AS eaches,
+            SUM(ol.qty * COALESCE(ol.pack, i.pack, 1) * COALESCE(ol.price, i.price, 0)) AS dollars
+       FROM orders o
+       JOIN order_lines ol ON ol.order_id = o.id
+       JOIN items i ON i.id = ol.item_id
+      WHERE o.status = 'submitted'
+        AND substr(o.delivery_date, 1, 7) BETWEEN ? AND ?
+      GROUP BY i.id, ym
+      HAVING SUM(ol.qty) > 0`
+  ).all(from, to);
+
+  const byItem = new Map();
+  for (const r of rows) {
+    if (!byItem.has(r.itemId)) byItem.set(r.itemId, { itemId: r.itemId, name: r.name, brand: r.brand, byMonth: {}, totalQty: 0, totalEaches: 0, totalDollars: 0 });
+    const it = byItem.get(r.itemId);
+    it.byMonth[r.ym] = { qty: r.qty, eaches: r.eaches, dollars: Math.round(r.dollars * 100) / 100 };
+    it.totalQty += r.qty; it.totalEaches += r.eaches; it.totalDollars += r.dollars;
+  }
+  const items = [...byItem.values()].map(it => ({ ...it, totalDollars: Math.round(it.totalDollars * 100) / 100 }))
+    .sort((a, b) => (a.brand || '').localeCompare(b.brand || '') || a.name.localeCompare(b.name));
+
+  res.json({ from, to, months, itemCount: items.length, items });
+});
+
 module.exports = router;
