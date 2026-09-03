@@ -211,6 +211,26 @@ function setInvoiceStart(nextNumber) {
 
 // Per-store catalog overrides. present=1 -> add this item to the store's
 // catalog; present=0 -> remove it (even if it's in the default set).
+// Purchase orders (incoming stock from suppliers) and their lines. "Incoming"
+// per item = SUM(qty_ordered - qty_received) across non-cancelled PO lines.
+db.exec(`CREATE TABLE IF NOT EXISTS purchase_orders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  supplier TEXT,
+  reference TEXT,
+  order_date TEXT,
+  expected_date TEXT,
+  status TEXT NOT NULL DEFAULT 'open',   -- open | partial | received | cancelled
+  notes TEXT,
+  created_at TEXT
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS po_lines (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  po_id INTEGER NOT NULL,
+  item_id TEXT NOT NULL,
+  qty_ordered INTEGER NOT NULL DEFAULT 0,
+  qty_received INTEGER NOT NULL DEFAULT 0
+)`);
+
 db.exec(`CREATE TABLE IF NOT EXISTS customer_catalog (
   customer_id INTEGER NOT NULL,
   item_id TEXT NOT NULL,
