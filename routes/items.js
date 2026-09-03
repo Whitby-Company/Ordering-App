@@ -282,4 +282,21 @@ router.post('/activate-all', (req, res) => {
   res.json({ ok: true, activated: r.changes });
 });
 
+// POST /api/items/fix-box-packs — one-time correction of box packs that were
+// stored as 1 (they hold multiple eaches). Loacker bars 12/box, Oberto 8/box.
+router.post('/fix-box-packs', (req, res) => {
+  const fixes = {
+    'Loacker:10643': 12, 'Loacker:10646': 12, 'Loacker:10671': 12, 'Loacker:10674': 12,
+    'Loacker:10675': 12, 'Loacker:13501': 12, 'Loacker:12581': 12, 'Loacker:12586': 12,
+    'Loacker:12587': 12, 'Oberto:3356': 8, 'Oberto:3358': 8,
+  };
+  const upd = db.prepare('UPDATE items SET pack = ? WHERE id = ?');
+  const applied = [];
+  for (const [id, pack] of Object.entries(fixes)) {
+    const r = upd.run(pack, id);
+    if (r.changes) applied.push({ id, pack });
+  }
+  res.json({ ok: true, updated: applied.length, applied });
+});
+
 module.exports = router;
