@@ -414,4 +414,48 @@ router.get('/ordered-report', (req, res) => {
   res.json({ from, to, orders: orderCount, itemCount: rows.length, items: rows });
 });
 
+// POST /api/orders/subtract-ordered { from, to, apply }
+// Subtract the quantities ORDERED (submitted) in the date range from item stock.
+// Stock is counted in boxes; a case line subtracts qty * case_size boxes.
+// apply=false (default) is a dry run that only reports what would change.
+router.post('/subtract-ordered', (req, res) => {
+  const from = String((req.body && req.body.from) || '').slice(0, 10);
+  const to = String((req.body && req.body.to) || from).slice(0, 10);
+  const apply = !!(req.body && req.body.apply);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+    return res.status(400).json({ error: 'Provide from (and optional to) as YYYY-MM-DD' });
+  }
+  // boxes ordered per item in range (case lines count as qty * case_size boxes)
+  const rows = db.prepare(
+    `SELECT i.id AS itemId, i.name, i.brand, i.stock AS currentStock,
+            SUM(ol.qty * CASE WHEN ol.unit = 'case' THEN COALESCE(i.case_size,1) ELSE 1 END) AS boxesOrdered
+       FROM orders o
+       JOIN order_lines ol ON ol.order_id = o.id
+       JOIN items i ON i.id = ol.item_id
+      WHERE substr(o.submitted_at,1,10) BETWEEN ? AND ?
+        AND o.status = 'submitted'
+      GROUP BY i.id
+      HAVING SUM(ol.qty) > 0
+      ORDER BY i.brand, i.name`
+  ).all(from, to);
+
+  const changes = rows.map(r => ({
+    itemId: r.itemId, name: r.name, brand: r.brand,
+    from: r.currentStock, subtract: r.boxesOrdered,
+    to: r.currentStock - r.boxesOrdered,
+    goesNegative: (r.currentStock - r.boxesOrdered) < 0,
+  }));
+
+  if (apply) {
+    const upd = db.prepare('UPDATE items SET stock = stock - ? WHERE id = ?');
+    const tx = db.transaction(() => { for (const c of changes) upd.run(c.subtract, c.itemId); });
+    tx();
+  }
+  res.json({
+    from, to, applied: apply, itemCount: changes.length,
+    wouldGoNegative: changes.filter(c => c.goesNegative).length,
+    changes,
+  });
+});
+
 module.exports = router;
