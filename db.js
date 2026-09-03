@@ -190,6 +190,10 @@ if (!orderColumns.includes('status')) {
   db.exec("ALTER TABLE orders ADD COLUMN status TEXT DEFAULT 'submitted'");
   db.exec("UPDATE orders SET status = 'submitted' WHERE status IS NULL");
 }
+// Custom PO number override for the order (blank = use the auto MMDDYY-abbrev).
+if (!orderColumns.includes('po_number')) {
+  db.exec('ALTER TABLE orders ADD COLUMN po_number TEXT');
+}
 
 // Small key/value table for one-time migrations / flags.
 db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)');

@@ -113,11 +113,11 @@ function buildTP(orders, brandAbbrev = {}, invoiceOffset = 0) {
     const orderLines = [...positive, ...zeros];
     if (orderLines.length === 0) continue;
 
-    // Invoice-level values built from the customer's abbreviation / short name.
-    // PO Number = MMDDYY(export date)-<abbr>.
+    // PO Number = the order's custom po_number if set, else MMDDYY(export date)-<abbr>.
     const abbr = (order.abbreviation || '').trim();
     const shortName = (order.shortName || '').trim();
-    const poNumber = abbr ? `${exportPoDate}-${abbr}` : '';
+    const autoPo = abbr ? `${exportPoDate}-${abbr}` : '';
+    const poNumber = (order.poNumber && String(order.poNumber).trim()) ? String(order.poNumber).trim() : autoPo;
     // In the memo the PO is labeled "PO#"; the PO Number column stays plain.
     const poForMemo = poNumber ? `PO# ${poNumber}` : '';
 
