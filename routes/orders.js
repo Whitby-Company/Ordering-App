@@ -100,7 +100,7 @@ router.get('/tp', (req, res) => {
   if (ids.length === 0) return res.status(400).json({ error: 'Provide ?ids=1,2,3' });
   const orders = fetchOrdersForIIF(ids);
   if (orders.length === 0) return res.status(404).json({ error: 'No matching orders found' });
-  const csv = buildTP(orders, brandAbbrevMap());
+  const csv = buildTP(orders, brandAbbrevMap(), db.getInvoiceOffset());
   const filename = orders.length === 1 ? `order-${orders[0].id}-TP.csv` : `orders-${orders.length}-TP.csv`;
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -112,7 +112,7 @@ router.get('/:id/tp', (req, res) => {
   if (!id) return res.status(400).json({ error: 'Invalid order id' });
   const orders = fetchOrdersForIIF([id]);
   if (orders.length === 0) return res.status(404).json({ error: 'Order not found' });
-  const csv = buildTP(orders, brandAbbrevMap());
+  const csv = buildTP(orders, brandAbbrevMap(), db.getInvoiceOffset());
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="order-${id}-TP.csv"`);
   res.send(csv);
@@ -371,6 +371,17 @@ router.delete('/:id', (req, res) => {
   run();
 
   res.json({ id: Number(orderId), deleted: true });
+});
+
+// GET /api/orders/invoice-offset — the current offset (invoice # = id + offset).
+router.get('/invoice-offset', (req, res) => {
+  res.json({ offset: db.getInvoiceOffset() });
+});
+// POST /api/orders/invoice-start — set numbering so the next order = {next}.
+router.post('/invoice-start', (req, res) => {
+  const next = Number(req.body && req.body.next);
+  if (!Number.isFinite(next) || next < 1) return res.status(400).json({ error: 'Provide next (a positive number)' });
+  res.json({ ok: true, ...db.setInvoiceStart(next) });
 });
 
 module.exports = router;

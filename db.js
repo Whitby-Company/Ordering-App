@@ -188,6 +188,21 @@ if (!orderColumns.includes('status')) {
 // Small key/value table for one-time migrations / flags.
 db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)');
 
+// Invoice numbering: invoice # = order.id + invoice_offset. Default keeps the
+// historical +30000 behavior until an admin sets a starting number.
+function getInvoiceOffset() {
+  const row = db.prepare("SELECT value FROM meta WHERE key = 'invoice_offset'").get();
+  return row ? Number(row.value) : 30000;
+}
+function setInvoiceStart(nextNumber) {
+  // next order id is max(id)+1 (or 1 if none); offset so it prints nextNumber.
+  const max = db.prepare('SELECT COALESCE(MAX(id), 0) AS m FROM orders').get().m;
+  const nextId = max + 1;
+  const offset = Number(nextNumber) - nextId;
+  db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('invoice_offset', ?)").run(String(offset));
+  return { offset, nextId, nextNumber: Number(nextNumber) };
+}
+
 // Per-store catalog overrides. present=1 -> add this item to the store's
 // catalog; present=0 -> remove it (even if it's in the default set).
 db.exec(`CREATE TABLE IF NOT EXISTS customer_catalog (
@@ -275,3 +290,5 @@ module.exports = db;
 module.exports.seedShipToOnce = seedShipToOnce;
 module.exports.applyShipToSeed = applyShipToSeed;
 module.exports.seedCatalogOnce = seedCatalogOnce;
+module.exports.getInvoiceOffset = getInvoiceOffset;
+module.exports.setInvoiceStart = setInvoiceStart;

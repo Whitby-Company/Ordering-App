@@ -97,7 +97,7 @@ function todayISO() {
 // Each order becomes an invoice; every line item is one CSV row that repeats
 // the invoice-level fields (Customer/Date/RefNumber/PO/Memo/totals) — exactly
 // how TP's sample groups multiple lines into a single invoice by RefNumber.
-function buildTP(orders, brandAbbrev = {}) {
+function buildTP(orders, brandAbbrev = {}, invoiceOffset = 0) {
   const lines = [TP_COLUMNS.join(',')];
   // PO number uses the export date (when the invoice is being created).
   const exportPoDate = poDate(todayISO());
@@ -144,7 +144,7 @@ function buildTP(orders, brandAbbrev = {}) {
       const fields = {
         Customer: qbName,
         'Transaction Date': date,
-        RefNumber: order.id,
+        RefNumber: Number(order.id) + Number(invoiceOffset || 0),
         'PO Number': poNumber,
         'Template Name': '1 - HG  INV W/ UPC',
         // Ship-to block, composed explicitly so it prints in this exact order:
