@@ -180,7 +180,7 @@ function effectiveCatalogIds(customerId) {
   if (cust.include_default) {
     for (const r of db.prepare('SELECT id FROM items WHERE is_default = 1 AND active = 1').all()) set.add(r.id);
   }
-  const overrides = db.prepare('SELECT item_id, present FROM customer_catalog WHERE customer_id = ?').all(customerId);
+  const overrides = db.prepare('SELECT item_id, present, price, unit FROM customer_catalog WHERE customer_id = ?').all(customerId);
   for (const o of overrides) { if (o.present) set.add(o.item_id); else set.delete(o.item_id); }
   return { catalogOn: !!cust.catalog_on, includeDefault: !!cust.include_default, itemIds: [...set] };
 }
@@ -189,7 +189,7 @@ function effectiveCatalogIds(customerId) {
 router.get('/:id/catalog', (req, res) => {
   const result = effectiveCatalogIds(req.params.id);
   if (!result) return res.status(404).json({ error: 'Customer not found' });
-  const overrides = db.prepare('SELECT item_id, present FROM customer_catalog WHERE customer_id = ?').all(req.params.id);
+  const overrides = db.prepare('SELECT item_id, present, price, unit FROM customer_catalog WHERE customer_id = ?').all(req.params.id);
   res.json({ ...result, overrides });
 });
 
