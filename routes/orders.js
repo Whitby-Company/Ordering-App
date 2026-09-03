@@ -544,4 +544,36 @@ router.get('/margin-report', (req, res) => {
     totals: { sell: totalSell, cost: totalCost, marginD: totalMargin, marginPct: totalMarginPct }, items });
 });
 
+// GET /api/orders/:id/margin — per-item margin + total profit for one order.
+router.get('/:id/margin', (req, res) => {
+  const order = db.prepare(
+    `SELECT o.id, o.delivery_date AS deliveryDate, o.submitted_at AS submittedAt, o.status,
+            c.name AS customer
+       FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = ?`
+  ).get(req.params.id);
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+  const lines = db.prepare(
+    `SELECT ol.item_id AS itemId, i.name AS item, i.brand,
+            ol.qty, COALESCE(ol.pack, i.pack, 1) AS pack, ol.unit,
+            COALESCE(ol.price, i.price, 0) AS priceEa, i.cost AS costEa
+       FROM order_lines ol JOIN items i ON i.id = ol.item_id
+      WHERE ol.order_id = ?`
+  ).all(req.params.id);
+
+  let totSell = 0, totCost = 0, missingCost = 0;
+  const items = lines.filter(l => l.qty > 0).map(l => {
+    const eaches = l.qty * l.pack;
+    const sell = Math.round(eaches * l.priceEa * 100) / 100;
+    const cost = l.costEa == null ? null : Math.round(eaches * l.costEa * 100) / 100;
+    const marginD = cost == null ? null : Math.round((sell - cost) * 100) / 100;
+    const marginPct = (cost == null || sell === 0) ? null : Math.round((marginD / sell) * 1000) / 10;
+    totSell += sell; if (cost != null) totCost += cost; if (l.costEa == null) missingCost++;
+    return { itemId: l.itemId, item: l.item, brand: l.brand, qty: l.qty, unit: l.unit || 'box', eaches, priceEa: l.priceEa, costEa: l.costEa, sell, cost, marginD, marginPct };
+  });
+  totSell = Math.round(totSell * 100) / 100; totCost = Math.round(totCost * 100) / 100;
+  const profit = Math.round((totSell - totCost) * 100) / 100;
+  const marginPct = totSell ? Math.round((profit / totSell) * 1000) / 10 : null;
+  res.json({ order, missingCost, totals: { sell: totSell, cost: totCost, profit, marginPct }, items });
+});
+
 module.exports = router;
