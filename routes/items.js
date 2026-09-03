@@ -13,7 +13,7 @@ const router = express.Router();
 // Optional query params: ?brand=Oberto  ?lowStockMax=5  ?includeInactive=true
 router.get('/', (req, res) => {
   const { brand, lowStockMax, includeInactive } = req.query;
-  let sql = 'SELECT id, brand, name, stock, price, pack, packLabel, imageUrl, upc, active, contains, is_default as isDefault FROM items WHERE 1=1';
+  let sql = 'SELECT id, brand, name, stock, price, pack, packLabel, imageUrl, upc, active, contains, is_default as isDefault, case_size as caseSize, case_price as casePrice FROM items WHERE 1=1';
   const params = [];
 
   if (includeInactive !== 'true') {
@@ -297,6 +297,17 @@ router.post('/fix-box-packs', (req, res) => {
     if (r.changes) applied.push({ id, pack });
   }
   res.json({ ok: true, updated: applied.length, applied });
+});
+
+// GET /api/items/consolidate-preview — dry run of the box+case merge.
+router.get('/consolidate-preview', (req, res) => {
+  const { consolidate } = require('../consolidate');
+  res.json(consolidate(db, { apply: false }));
+});
+// POST /api/items/consolidate — actually merge box+case pairs (destructive).
+router.post('/consolidate', (req, res) => {
+  const { consolidate } = require('../consolidate');
+  res.json(consolidate(db, { apply: true }));
 });
 
 module.exports = router;

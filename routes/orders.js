@@ -193,36 +193,35 @@ router.post('/', (req, res) => {
 
   // Validate every line. For a normal (submitted) order we also check stock;
   // a pending draft doesn't reserve stock, so we skip the stock check.
-  const getItem = db.prepare('SELECT id, name, brand, stock, price, pack FROM items WHERE id = ?');
+  const getItem = db.prepare('SELECT id, name, brand, stock, price, pack, case_size, case_price FROM items WHERE id = ?');
+  // The store's default unit for an item (from its catalog), fallback 'box'.
+  const custUnitStmt = db.prepare('SELECT unit, price FROM customer_catalog WHERE customer_id = ? AND item_id = ?');
   const resolvedLines = [];
   for (const line of lines) {
     const item = getItem.get(line.itemId);
     if (!item) return res.status(404).json({ error: `Item "${line.itemId}" not found` });
     const qty = Number(line.qty);
-    // qty 0 is allowed: it puts an item on the order (e.g. so its UPC prints
-    // for check-in) without ordering any or touching stock. Reject negatives
-    // and non-numbers only.
     if (!Number.isFinite(qty) || qty < 0) return res.status(400).json({ error: `Invalid quantity for "${item.name}"` });
-    if (!isPending && qty > 0 && qty > item.stock) {
-      return res.status(409).json({
-        error: `Not enough stock for "${item.name}" — ${item.stock} available, ${qty} requested`,
-      });
-    }
-    resolvedLines.push({ item, qty });
+    // Ordering unit: explicit on the line, else the store's catalog default, else box.
+    const cat = custUnitStmt.get(customerId, item.id);
+    let unit = (line.unit === 'case' || line.unit === 'box') ? line.unit : (cat && cat.unit ? cat.unit : 'box');
+    if (unit === 'case' && !item.case_size) unit = 'box'; // item has no case unit
+    // Effective pack (eaches per ordered unit) and per-each price for this unit.
+    const pack = unit === 'case' ? (item.pack * item.case_size) : item.pack;
+    // Price: the store's catalog price if this is their default unit; otherwise
+    // the item's base price for the unit (case_price for case, price for box).
+    let price;
+    if (cat && cat.price != null && (cat.unit || 'box') === unit) price = cat.price;
+    else price = unit === 'case' ? (item.case_price != null ? item.case_price : item.price) : item.price;
+    // Stock is tracked in eaches at the box level; qty of this unit uses `pack` eaches.
+    resolvedLines.push({ item, qty, unit, pack, price });
   }
 
   const insertOrder = db.prepare(
     'INSERT INTO orders (customer_id, delivery_date, submitted_at, notes, submitted_by, status) VALUES (?, ?, ?, ?, ?, ?)'
   );
-  const insertLine = db.prepare('INSERT INTO order_lines (order_id, item_id, qty, price) VALUES (?, ?, ?, ?)');
+  const insertLine = db.prepare('INSERT INTO order_lines (order_id, item_id, qty, price, unit, pack) VALUES (?, ?, ?, ?, ?, ?)');
   const decrementStock = db.prepare('UPDATE items SET stock = stock - ? WHERE id = ?');
-  // A customer's per-each price for an item: their catalog override if set,
-  // otherwise the item's base price. Snapshotted onto the order line.
-  const custPriceStmt = db.prepare('SELECT price FROM customer_catalog WHERE customer_id = ? AND item_id = ?');
-  const priceFor = (item) => {
-    const row = custPriceStmt.get(customerId, item.id);
-    return (row && row.price != null) ? row.price : item.price;
-  };
 
   const submittedAt = new Date().toISOString();
   const cleanNotes = (typeof notes === 'string' && notes.trim()) ? notes.trim() : null;
@@ -232,9 +231,13 @@ router.post('/', (req, res) => {
   const createOrder = db.transaction(() => {
     const orderInfo = insertOrder.run(customerId, deliveryDate, submittedAt, cleanNotes, cleanSubmittedBy, status);
     const orderId = orderInfo.lastInsertRowid;
-    for (const { item, qty } of resolvedLines) {
-      insertLine.run(orderId, item.id, qty, priceFor(item));
-      if (!isPending) decrementStock.run(qty, item.id); // pending drafts don't reserve stock
+    for (const { item, qty, unit, pack, price } of resolvedLines) {
+      insertLine.run(orderId, item.id, qty, price, unit, pack);
+      // Stock is counted in boxes; a case order consumes qty * case_size boxes.
+      if (!isPending) {
+        const boxes = qty * (unit === 'case' ? (item.case_size || 1) : 1);
+        decrementStock.run(boxes, item.id);
+      }
     }
     return orderId;
   });
@@ -278,7 +281,7 @@ router.patch('/:id', (req, res) => {
   const oldQtyByItem = {};
   for (const l of oldLines) oldQtyByItem[l.item_id] = l.qty;
 
-  const getItem = db.prepare('SELECT id, name, brand, stock, price, pack FROM items WHERE id = ?');
+  const getItem = db.prepare('SELECT id, name, brand, stock, price, pack, case_size, case_price FROM items WHERE id = ?');
   const newQtyByItem = {};
   const resolvedLines = [];
   for (const line of lines) {

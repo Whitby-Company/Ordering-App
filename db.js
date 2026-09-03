@@ -97,6 +97,14 @@ if (!itemColumns.includes('is_default')) {
   // 1 = item is part of the default catalog (the base set most stores carry).
   db.exec('ALTER TABLE items ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0');
 }
+// Case ordering unit: case_size = boxes per case (NULL if the item has no case
+// unit); case_price = per-each price when ordered by the case (bulk).
+if (!itemColumns.includes('case_size')) {
+  db.exec('ALTER TABLE items ADD COLUMN case_size INTEGER');
+}
+if (!itemColumns.includes('case_price')) {
+  db.exec('ALTER TABLE items ADD COLUMN case_price REAL');
+}
 if (!itemColumns.includes('imageUrl')) {
   db.exec('ALTER TABLE items ADD COLUMN imageUrl TEXT');
 }
@@ -152,6 +160,14 @@ const orderLineColumns = db.prepare("PRAGMA table_info(order_lines)").all().map(
 if (!orderLineColumns.includes('price')) {
   db.exec('ALTER TABLE order_lines ADD COLUMN price REAL');
 }
+// Which unit this line was ordered in ('box' | 'case') and the effective pack
+// (eaches per ordered unit) — snapshotted so history is stable.
+if (!orderLineColumns.includes('unit')) {
+  db.exec("ALTER TABLE order_lines ADD COLUMN unit TEXT");
+}
+if (!orderLineColumns.includes('pack')) {
+  db.exec('ALTER TABLE order_lines ADD COLUMN pack INTEGER');
+}
 if (!orderColumns.includes('notes')) {
   db.exec('ALTER TABLE orders ADD COLUMN notes TEXT');
 }
@@ -181,10 +197,12 @@ db.exec(`CREATE TABLE IF NOT EXISTS customer_catalog (
   price REAL,                    -- per-each price for this customer (NULL = use item base price)
   PRIMARY KEY (customer_id, item_id)
 )`);
-// Migration-safe: add price column if the table pre-existed without it.
+// Migration-safe: add columns if the table pre-existed without them.
 {
   const cc = db.prepare("PRAGMA table_info(customer_catalog)").all().map(c => c.name);
   if (!cc.includes('price')) db.exec('ALTER TABLE customer_catalog ADD COLUMN price REAL');
+  // The store's default ordering unit for this item ('box' | 'case').
+  if (!cc.includes('unit')) db.exec("ALTER TABLE customer_catalog ADD COLUMN unit TEXT");
 }
 
 // One-time catalog rollout: mark all currently-active items as default, and
