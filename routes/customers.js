@@ -372,4 +372,41 @@ router.post('/apply-price-list', (req, res) => {
   res.json({ ok: true, ...report });
 });
 
+// GET /api/customers/verify-price-list — check that each store's catalog prices
+// match the price list for their level. Reports any mismatches.
+router.get('/verify-price-list', (req, res) => {
+  const { PRICE_LIST } = require('../customerPriceList');
+  const { normalizeName } = require('../shiptoSeed');
+  const levelIdx = new Map(PRICE_LIST.levels.map((c, i) => [c, String(i)]));
+  const customers = db.prepare('SELECT id, name FROM customers').all();
+  const custByNorm = new Map(customers.map(c => [normalizeName(c.name), c]));
+  const items = db.prepare('SELECT id FROM items').all();
+  const validIds = new Set(items.map(i => i.id));
+  const normId = s => String(s).trim().toLowerCase();
+  const idByNorm = new Map(items.map(i => [normId(i.id), i.id]));
+  const resolveSku = sku => validIds.has(sku) ? sku : (idByNorm.get(normId(sku)) || idByNorm.get(normId(sku.toLowerCase().endsWith('c') ? sku.slice(0, -1) : sku + 'c')) || null);
+  const priceByItem = new Map();
+  for (const [sku, d] of Object.entries(PRICE_LIST.prices)) {
+    const id = resolveSku(sku); if (!id) continue;
+    if (!priceByItem.has(id)) priceByItem.set(id, { base: d.b, lv: d.l || {} });
+    else { const cur = priceByItem.get(id); if (cur.base == null && d.b != null) cur.base = d.b; Object.assign(cur.lv, d.l || {}); }
+  }
+  const getCat = db.prepare('SELECT item_id, price FROM customer_catalog WHERE customer_id = ? AND present = 1');
+  let checked = 0, matches = 0;
+  const mismatches = [];
+  for (const [name, levelCol] of Object.entries(PRICE_LIST.mapping)) {
+    const cust = custByNorm.get(normalizeName(name)); if (!cust) continue;
+    const lidx = levelCol ? levelIdx.get(levelCol) : null;
+    for (const row of getCat.all(cust.id)) {
+      const pd = priceByItem.get(row.item_id); if (!pd) continue;
+      const expected = (lidx != null && pd.lv[lidx] != null) ? pd.lv[lidx] : pd.base;
+      if (expected == null) continue;
+      checked++;
+      if (row.price != null && Math.abs(row.price - expected) < 0.005) matches++;
+      else if (mismatches.length < 200) mismatches.push({ customer: name, item: row.item_id, appPrice: row.price, listPrice: expected });
+    }
+  }
+  res.json({ checked, matches, mismatchCount: checked - matches, mismatches });
+});
+
 module.exports = router;
