@@ -305,4 +305,71 @@ router.put('/:id/catalog/price', (req, res) => {
   res.json({ ok: true, itemId, price: p });
 });
 
+// POST /api/customers/apply-price-list — overwrite each store's catalog prices
+// from the confirmed price list, using their mapped price level (or the base
+// sell price when unmapped). Only touches items already in the store's catalog.
+router.post('/apply-price-list', (req, res) => {
+  const { PRICE_LIST } = require('../customerPriceList');
+  const { normalizeName } = require('../shiptoSeed');
+  const levelIdx = new Map(PRICE_LIST.levels.map((c, i) => [c, String(i)]));
+
+  const customers = db.prepare('SELECT id, name FROM customers').all();
+  const custByNorm = new Map(customers.map(c => [normalizeName(c.name), c]));
+  const items = db.prepare('SELECT id FROM items').all();
+  const validIds = new Set(items.map(i => i.id));
+  const normId = s => String(s).trim().toLowerCase();
+  const idByNorm = new Map(items.map(i => [normId(i.id), i.id]));
+  const resolveSku = sku => {
+    if (validIds.has(sku)) return sku;
+    const alt = sku.toLowerCase().endsWith('c') ? sku.slice(0, -1) : sku + 'c';
+    return idByNorm.get(normId(sku)) || idByNorm.get(normId(alt)) || null;
+  };
+  // price for an item id at a given level column (or base if no level price)
+  const priceFor = (itemId, levelCol) => {
+    // find the source SKU whose resolved id equals this itemId
+    // (build a reverse index once)
+    return null; // replaced below by prebuilt map
+  };
+
+  // Prebuild: resolvedItemId -> { base, byLevelIdx }
+  const priceByItem = new Map();
+  for (const [sku, d] of Object.entries(PRICE_LIST.prices)) {
+    const id = resolveSku(sku);
+    if (!id) continue;
+    if (!priceByItem.has(id)) priceByItem.set(id, { base: d.b, lv: d.l || {} });
+    else {
+      const cur = priceByItem.get(id);
+      if (cur.base == null && d.b != null) cur.base = d.b;
+      Object.assign(cur.lv, d.l || {});
+    }
+  }
+
+  const getCatalogItems = db.prepare('SELECT item_id FROM customer_catalog WHERE customer_id = ? AND present = 1');
+  const setPrice = db.prepare('UPDATE customer_catalog SET price = ? WHERE customer_id = ? AND item_id = ?');
+
+  const report = { customersUpdated: 0, pricesSet: 0, usedBase: 0, noPrice: 0, unmappedCustomers: [] };
+  const tx = db.transaction(() => {
+    for (const [name, levelCol] of Object.entries(PRICE_LIST.mapping)) {
+      const cust = custByNorm.get(normalizeName(name));
+      if (!cust) continue;
+      const lidx = levelCol ? levelIdx.get(levelCol) : null;
+      let any = false;
+      for (const row of getCatalogItems.all(cust.id)) {
+        const pd = priceByItem.get(row.item_id);
+        if (!pd) { report.noPrice++; continue; }
+        let price = (lidx != null && pd.lv[lidx] != null) ? pd.lv[lidx] : pd.base;
+        if (lidx != null && pd.lv[lidx] == null) report.usedBase++;
+        if (!levelCol) report.usedBase++;
+        if (price == null) { report.noPrice++; continue; }
+        setPrice.run(price, cust.id, row.item_id);
+        report.pricesSet++; any = true;
+      }
+      if (!levelCol) report.unmappedCustomers.push(name);
+      if (any) report.customersUpdated++;
+    }
+  });
+  tx();
+  res.json({ ok: true, ...report });
+});
+
 module.exports = router;
