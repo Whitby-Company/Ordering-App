@@ -13,7 +13,7 @@ const router = express.Router();
 // Optional query params: ?brand=Oberto  ?lowStockMax=5  ?includeInactive=true
 router.get('/', (req, res) => {
   const { brand, lowStockMax, includeInactive } = req.query;
-  let sql = 'SELECT id, brand, name, stock, price, pack, packLabel, imageUrl, upc, active, contains, is_default as isDefault, case_size as caseSize, case_price as casePrice FROM items WHERE 1=1';
+  let sql = 'SELECT id, brand, name, stock, price, pack, packLabel, imageUrl, upc, active, contains, is_default as isDefault, case_size as caseSize, case_price as casePrice, cost FROM items WHERE 1=1';
   const params = [];
 
   if (includeInactive !== 'true') {
@@ -73,8 +73,8 @@ router.post('/', (req, res) => {
 // (Stock corrections here are for fixing mistakes — normal stock changes
 // should happen via orders.)
 router.patch('/:id', (req, res) => {
-  const { stock, name, brand, pack, packLabel, imageUrl, upc, price, active, contains, isDefault } = req.body;
-  if (stock === undefined && name === undefined && brand === undefined && pack === undefined && packLabel === undefined && imageUrl === undefined && upc === undefined && price === undefined && active === undefined && contains === undefined && isDefault === undefined) {
+  const { stock, name, brand, pack, packLabel, imageUrl, upc, price, active, contains, isDefault, cost } = req.body;
+  if (stock === undefined && name === undefined && brand === undefined && pack === undefined && packLabel === undefined && imageUrl === undefined && upc === undefined && price === undefined && active === undefined && contains === undefined && isDefault === undefined && cost === undefined) {
     return res.status(400).json({ error: 'At least one field must be provided' });
   }
   if (stock !== undefined && Number.isNaN(Number(stock))) {
@@ -108,6 +108,7 @@ router.patch('/:id', (req, res) => {
   if (price !== undefined) { updates.push('price = ?'); params.push(Number(price)); }
   if (active !== undefined) { updates.push('active = ?'); params.push(active ? 1 : 0); }
   if (isDefault !== undefined) { updates.push('is_default = ?'); params.push(isDefault ? 1 : 0); }
+  if (cost !== undefined) { updates.push('cost = ?'); params.push(cost === '' || cost === null ? null : Number(cost)); }
   if (contains !== undefined) {
     // Normalize to an array of {qty, name, upc}; store as JSON (null if empty).
     let arr = [];
@@ -273,6 +274,25 @@ router.post('/:id/image', (req, res) => {
   db.prepare('UPDATE items SET imageUrl = ? WHERE id = ?').run(imageUrl, req.params.id);
 
   res.json({ id: req.params.id, imageUrl });
+});
+
+// POST /api/items/apply-costs — load landed costs from the pricing sheet bundle.
+router.post('/apply-costs', (req, res) => {
+  const { ITEM_COSTS } = require('../itemCosts');
+  const valid = new Set(db.prepare('SELECT id FROM items').all().map(i => i.id));
+  const normId = s => String(s).trim().toLowerCase();
+  const idByNorm = new Map(db.prepare('SELECT id FROM items').all().map(i => [normId(i.id), i.id]));
+  const upd = db.prepare('UPDATE items SET cost = ? WHERE id = ?');
+  let updated = 0, skipped = 0;
+  const tx = db.transaction(() => {
+    for (const [id, cost] of Object.entries(ITEM_COSTS)) {
+      let target = valid.has(id) ? id : idByNorm.get(normId(id));
+      if (!target) { skipped++; continue; }
+      upd.run(cost, target); updated++;
+    }
+  });
+  tx();
+  res.json({ ok: true, updated, skipped });
 });
 
 // POST /api/items/activate-all — make every inactive item active again.

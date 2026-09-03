@@ -500,4 +500,48 @@ router.get('/sales-by-month', (req, res) => {
   res.json({ from, to, months, itemCount: items.length, items });
 });
 
+// GET /api/orders/margin-report?from=YYYY-MM&to=YYYY-MM
+// Per customer + item: units, sell $, cost $ (landed), margin $ and % over a
+// delivery-date range. Cost = item.cost (landed w/Taiyo) per each.
+router.get('/margin-report', (req, res) => {
+  const from = String(req.query.from || '').slice(0, 7);
+  const to = String(req.query.to || from).slice(0, 7);
+  if (!/^\d{4}-\d{2}$/.test(from) || !/^\d{4}-\d{2}$/.test(to)) {
+    return res.status(400).json({ error: 'Provide from (and optional to) as YYYY-MM' });
+  }
+  const rows = db.prepare(
+    `SELECT c.name AS customer, i.id AS itemId, i.name AS item, i.brand,
+            SUM(ol.qty) AS qty,
+            SUM(ol.qty * COALESCE(ol.pack, i.pack, 1)) AS eaches,
+            SUM(ol.qty * COALESCE(ol.pack, i.pack, 1) * COALESCE(ol.price, i.price, 0)) AS sell,
+            SUM(ol.qty * COALESCE(ol.pack, i.pack, 1) * i.cost) AS cost,
+            i.cost AS unitCost
+       FROM orders o
+       JOIN order_lines ol ON ol.order_id = o.id
+       JOIN items i ON i.id = ol.item_id
+       JOIN customers c ON c.id = o.customer_id
+      WHERE o.status = 'submitted'
+        AND substr(o.delivery_date, 1, 7) BETWEEN ? AND ?
+      GROUP BY c.id, i.id
+      HAVING SUM(ol.qty) > 0
+      ORDER BY c.name, i.brand, i.name`
+  ).all(from, to);
+
+  const items = rows.map(r => {
+    const sell = Math.round((r.sell || 0) * 100) / 100;
+    const cost = r.cost == null ? null : Math.round(r.cost * 100) / 100;
+    const marginD = cost == null ? null : Math.round((sell - cost) * 100) / 100;
+    const marginPct = (cost == null || sell === 0) ? null : Math.round((marginD / sell) * 1000) / 10;
+    return { customer: r.customer, itemId: r.itemId, item: r.item, brand: r.brand, eaches: r.eaches, sell, cost, unitCost: r.unitCost, marginD, marginPct, noCost: r.unitCost == null };
+  });
+  const withCost = items.filter(x => x.cost != null);
+  const totalSell = Math.round(items.reduce((s, x) => s + x.sell, 0) * 100) / 100;
+  const totalCost = Math.round(withCost.reduce((s, x) => s + x.cost, 0) * 100) / 100;
+  const totalMargin = Math.round((withCost.reduce((s, x) => s + x.sell, 0) - totalCost) * 100) / 100;
+  const totalMarginPct = withCost.length ? Math.round((totalMargin / withCost.reduce((s, x) => s + x.sell, 0)) * 1000) / 10 : null;
+
+  res.json({ from, to, rows: items.length, missingCost: items.filter(x => x.noCost).length,
+    totals: { sell: totalSell, cost: totalCost, marginD: totalMargin, marginPct: totalMarginPct }, items });
+});
+
 module.exports = router;

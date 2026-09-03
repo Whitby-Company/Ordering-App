@@ -105,6 +105,12 @@ if (!itemColumns.includes('case_size')) {
 if (!itemColumns.includes('case_price')) {
   db.exec('ALTER TABLE items ADD COLUMN case_price REAL');
 }
+// Landed cost per each (Net after discount + Taiyo 6% + Oahu freight), from the
+// pricing sheet. Used for the margin report. Neighbor-island freight is layered
+// on separately later.
+if (!itemColumns.includes('cost')) {
+  db.exec('ALTER TABLE items ADD COLUMN cost REAL');
+}
 if (!itemColumns.includes('imageUrl')) {
   db.exec('ALTER TABLE items ADD COLUMN imageUrl TEXT');
 }
