@@ -163,6 +163,10 @@ if (!customerColumns.includes('show_on_mobile')) {
 if (!customerColumns.includes('terms')) {
   db.exec('ALTER TABLE customers ADD COLUMN terms TEXT');
 }
+// This customer is a distributor: orders default to case units.
+if (!customerColumns.includes('is_distributor')) {
+  db.exec('ALTER TABLE customers ADD COLUMN is_distributor INTEGER NOT NULL DEFAULT 0');
+}
 const orderColumns = db.prepare("PRAGMA table_info(orders)").all().map(c => c.name);
 // Snapshot the per-each price on each order line so historical invoices don't
 // change if a customer's price changes later.

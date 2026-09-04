@@ -10,8 +10,8 @@ const router = express.Router();
 router.get('/', (req, res) => {
   const { includeInactive } = req.query;
   const sql = includeInactive === 'true'
-    ? 'SELECT id, name, active, delivery_day as deliveryDay, abbreviation, short_name as shortName, shipto_line1 as shipToLine1, shipto_line2 as shipToLine2, shipto_city as shipToCity, shipto_state as shipToState, shipto_zip as shipToZip, shipto_phone as shipToPhone, billto_line1 as billToLine1, billto_line2 as billToLine2, billto_city as billToCity, billto_state as billToState, billto_zip as billToZip, catalog_on as catalogOn, include_default as includeDefault, show_on_mobile as showOnMobile, terms FROM customers ORDER BY name ASC'
-    : 'SELECT id, name, active, delivery_day as deliveryDay, abbreviation, short_name as shortName, shipto_line1 as shipToLine1, shipto_line2 as shipToLine2, shipto_city as shipToCity, shipto_state as shipToState, shipto_zip as shipToZip, shipto_phone as shipToPhone, billto_line1 as billToLine1, billto_line2 as billToLine2, billto_city as billToCity, billto_state as billToState, billto_zip as billToZip, catalog_on as catalogOn, include_default as includeDefault, show_on_mobile as showOnMobile, terms FROM customers WHERE active = 1 ORDER BY name ASC';
+    ? 'SELECT id, name, active, delivery_day as deliveryDay, abbreviation, short_name as shortName, shipto_line1 as shipToLine1, shipto_line2 as shipToLine2, shipto_city as shipToCity, shipto_state as shipToState, shipto_zip as shipToZip, shipto_phone as shipToPhone, billto_line1 as billToLine1, billto_line2 as billToLine2, billto_city as billToCity, billto_state as billToState, billto_zip as billToZip, catalog_on as catalogOn, include_default as includeDefault, show_on_mobile as showOnMobile, terms, is_distributor as isDistributor FROM customers ORDER BY name ASC'
+    : 'SELECT id, name, active, delivery_day as deliveryDay, abbreviation, short_name as shortName, shipto_line1 as shipToLine1, shipto_line2 as shipToLine2, shipto_city as shipToCity, shipto_state as shipToState, shipto_zip as shipToZip, shipto_phone as shipToPhone, billto_line1 as billToLine1, billto_line2 as billToLine2, billto_city as billToCity, billto_state as billToState, billto_zip as billToZip, catalog_on as catalogOn, include_default as includeDefault, show_on_mobile as showOnMobile, terms, is_distributor as isDistributor FROM customers WHERE active = 1 ORDER BY name ASC';
   const customers = db.prepare(sql).all();
   res.json(customers);
 });
@@ -50,7 +50,7 @@ router.post('/', (req, res) => {
 // PATCH /api/customers/:id — update a customer. Accepts { active } to toggle
 // active/inactive and/or { name } to rename. At least one must be provided.
 router.patch('/:id', (req, res) => {
-  const { active, name, deliveryDay, abbreviation, shortName, showOnMobile, terms } = req.body;
+  const { active, name, deliveryDay, abbreviation, shortName, showOnMobile, terms, isDistributor } = req.body;
   const SHIPTO_FIELDS = { shipToLine1: 'shipto_line1', shipToLine2: 'shipto_line2', shipToCity: 'shipto_city', shipToState: 'shipto_state', shipToZip: 'shipto_zip', shipToPhone: 'shipto_phone', billToLine1: 'billto_line1', billToLine2: 'billto_line2', billToCity: 'billto_city', billToState: 'billto_state', billToZip: 'billto_zip' };
   const hasActive = typeof active === 'boolean';
   const hasMobile = typeof showOnMobile === 'boolean';
@@ -61,7 +61,7 @@ router.patch('/:id', (req, res) => {
   const abbrProvided = 'abbreviation' in req.body;
   const shortProvided = 'shortName' in req.body;
   const shipToProvided = Object.keys(SHIPTO_FIELDS).some(k => k in req.body);
-  if (!hasActive && !hasMobile && !hasName && !dayProvided && !abbrProvided && !shortProvided && !shipToProvided && terms === undefined) {
+  if (!hasActive && !hasMobile && !hasName && !dayProvided && !abbrProvided && !shortProvided && !shipToProvided && terms === undefined && isDistributor === undefined) {
     return res.status(400).json({ error: 'Provide active, showOnMobile, name, deliveryDay, abbreviation, shortName, and/or ship-to fields' });
   }
   if (dayProvided && !hasDay) {
@@ -82,6 +82,7 @@ router.patch('/:id', (req, res) => {
   if (hasActive) { updates.push('active = ?'); params.push(active ? 1 : 0); }
   if (hasMobile) { updates.push('show_on_mobile = ?'); params.push(showOnMobile ? 1 : 0); }
   if (terms !== undefined) { updates.push('terms = ?'); params.push((typeof terms === 'string' && terms.trim()) ? terms.trim() : null); }
+  if (typeof isDistributor === 'boolean') { updates.push('is_distributor = ?'); params.push(isDistributor ? 1 : 0); }
   if (hasName) { updates.push('name = ?'); params.push(name.trim()); }
   if (dayProvided) { updates.push('delivery_day = ?'); params.push(deliveryDay === null ? null : deliveryDay); }
   if (abbrProvided) { updates.push('abbreviation = ?'); params.push(normText(abbreviation)); }
@@ -100,7 +101,7 @@ router.patch('/:id', (req, res) => {
     throw err;
   }
 
-  const fresh = db.prepare('SELECT id, name, active, delivery_day as deliveryDay, abbreviation, short_name as shortName, shipto_line1 as shipToLine1, shipto_line2 as shipToLine2, shipto_city as shipToCity, shipto_state as shipToState, shipto_zip as shipToZip, shipto_phone as shipToPhone, billto_line1 as billToLine1, billto_line2 as billToLine2, billto_city as billToCity, billto_state as billToState, billto_zip as billToZip, catalog_on as catalogOn, include_default as includeDefault, show_on_mobile as showOnMobile, terms FROM customers WHERE id = ?').get(req.params.id);
+  const fresh = db.prepare('SELECT id, name, active, delivery_day as deliveryDay, abbreviation, short_name as shortName, shipto_line1 as shipToLine1, shipto_line2 as shipToLine2, shipto_city as shipToCity, shipto_state as shipToState, shipto_zip as shipToZip, shipto_phone as shipToPhone, billto_line1 as billToLine1, billto_line2 as billToLine2, billto_city as billToCity, billto_state as billToState, billto_zip as billToZip, catalog_on as catalogOn, include_default as includeDefault, show_on_mobile as showOnMobile, terms, is_distributor as isDistributor FROM customers WHERE id = ?').get(req.params.id);
   res.json({ ...fresh, active: !!fresh.active });
 });
 
