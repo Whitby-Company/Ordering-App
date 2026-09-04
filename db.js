@@ -216,6 +216,11 @@ if (!orderColumns.includes('exported')) {
   db.exec('ALTER TABLE orders ADD COLUMN exported INTEGER NOT NULL DEFAULT 0');
   db.exec('ALTER TABLE orders ADD COLUMN exported_at TEXT');
 }
+// Shared "ready for QuickBooks import" flag — persists so one user can mark
+// orders ready and another does the batch import later.
+if (!orderColumns.includes('ready_for_import')) {
+  db.exec('ALTER TABLE orders ADD COLUMN ready_for_import INTEGER NOT NULL DEFAULT 0');
+}
 
 // Small key/value table for one-time migrations / flags.
 db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)');
