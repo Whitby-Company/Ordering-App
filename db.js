@@ -167,6 +167,11 @@ if (!customerColumns.includes('terms')) {
 if (!customerColumns.includes('is_distributor')) {
   db.exec('ALTER TABLE customers ADD COLUMN is_distributor INTEGER NOT NULL DEFAULT 0');
 }
+// Sort this customer's invoice/print-sheet lines by the inventory print order
+// (default 0 = keep entry order).
+if (!customerColumns.includes('use_print_order')) {
+  db.exec('ALTER TABLE customers ADD COLUMN use_print_order INTEGER NOT NULL DEFAULT 0');
+}
 const orderColumns = db.prepare("PRAGMA table_info(orders)").all().map(c => c.name);
 // Snapshot the per-each price on each order line so historical invoices don't
 // change if a customer's price changes later.
