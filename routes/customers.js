@@ -112,6 +112,26 @@ router.patch('/:id', (req, res) => {
 // store to the central Times Supermarket address. One-time bulk action.
 // GET /api/customers/address-audit — list active customers missing a bill-to
 // or ship-to address, so gaps are easy to spot.
+// POST /api/customers/apply-terms — set each customer's payment terms from the
+// QuickBooks customer export bundle.
+router.post('/apply-terms', (req, res) => {
+  const { CUSTOMER_TERMS } = require('../customerTerms');
+  const { normalizeName } = require('../shiptoSeed');
+  const customers = db.prepare('SELECT id, name FROM customers').all();
+  const byNorm = new Map(customers.map(c => [normalizeName(c.name), c]));
+  const upd = db.prepare('UPDATE customers SET terms = ? WHERE id = ?');
+  let updated = 0; const unmatched = [];
+  const tx = db.transaction(() => {
+    for (const [name, terms] of Object.entries(CUSTOMER_TERMS)) {
+      const c = byNorm.get(normalizeName(name));
+      if (!c) { unmatched.push(name); continue; }
+      upd.run(terms, c.id); updated++;
+    }
+  });
+  tx();
+  res.json({ ok: true, updated, unmatched });
+});
+
 router.get('/address-audit', (req, res) => {
   const rows = db.prepare(
     `SELECT id, name, active,
