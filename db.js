@@ -172,6 +172,10 @@ if (!customerColumns.includes('is_distributor')) {
 if (!customerColumns.includes('use_print_order')) {
   db.exec('ALTER TABLE customers ADD COLUMN use_print_order INTEGER NOT NULL DEFAULT 0');
 }
+// Hide the barcode column on this customer's invoice (e.g. distributors).
+if (!customerColumns.includes('hide_barcodes')) {
+  db.exec('ALTER TABLE customers ADD COLUMN hide_barcodes INTEGER NOT NULL DEFAULT 0');
+}
 const orderColumns = db.prepare("PRAGMA table_info(orders)").all().map(c => c.name);
 // Snapshot the per-each price on each order line so historical invoices don't
 // change if a customer's price changes later.
