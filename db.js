@@ -211,6 +211,11 @@ if (!orderColumns.includes('po_number')) {
 if (!orderColumns.includes('invoice_number')) {
   db.exec('ALTER TABLE orders ADD COLUMN invoice_number INTEGER');
 }
+// Whether this order has been exported to QuickBooks (batched import).
+if (!orderColumns.includes('exported')) {
+  db.exec('ALTER TABLE orders ADD COLUMN exported INTEGER NOT NULL DEFAULT 0');
+  db.exec('ALTER TABLE orders ADD COLUMN exported_at TEXT');
+}
 
 // Small key/value table for one-time migrations / flags.
 db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)');

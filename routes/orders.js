@@ -10,7 +10,7 @@ router.get('/', (req, res) => {
   const orders = db
     .prepare(
       `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
-              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber,
+              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt,
               c.id as customerId, c.name as customer
        FROM orders o
        JOIN customers c ON c.id = o.customer_id
@@ -43,7 +43,7 @@ function fetchOrdersForIIF(ids) {
   );
   const orderStmt = db.prepare(
     `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
-              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber,
+              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt,
             c.name as customer, c.abbreviation as abbreviation, c.short_name as shortName,
             c.shipto_line1 as shipToLine1, c.shipto_line2 as shipToLine2, c.shipto_city as shipToCity,
             c.shipto_state as shipToState, c.shipto_zip as shipToZip, c.shipto_phone as shipToPhone
@@ -94,6 +94,26 @@ router.get('/:id/iif', (req, res) => {
 
 // GET /api/orders/:id/tp — download a Transaction Pro Importer CSV for one
 // order. GET /api/orders/tp?ids=1,2,3 exports several at once.
+// POST /api/orders/mark-exported { ids: [] } — flag orders as exported to QB.
+router.post('/mark-exported', (req, res) => {
+  const ids = Array.isArray(req.body && req.body.ids) ? req.body.ids.map(n => parseInt(n, 10)).filter(Boolean) : [];
+  if (ids.length === 0) return res.status(400).json({ error: 'Provide ids: []' });
+  const now = new Date().toISOString();
+  const upd = db.prepare('UPDATE orders SET exported = 1, exported_at = ? WHERE id = ?');
+  const tx = db.transaction(() => { for (const id of ids) upd.run(now, id); });
+  tx();
+  res.json({ ok: true, marked: ids.length });
+});
+// POST /api/orders/unmark-exported { ids: [] } — clear the exported flag.
+router.post('/unmark-exported', (req, res) => {
+  const ids = Array.isArray(req.body && req.body.ids) ? req.body.ids.map(n => parseInt(n, 10)).filter(Boolean) : [];
+  if (ids.length === 0) return res.status(400).json({ error: 'Provide ids: []' });
+  const upd = db.prepare('UPDATE orders SET exported = 0, exported_at = NULL WHERE id = ?');
+  const tx = db.transaction(() => { for (const id of ids) upd.run(id); });
+  tx();
+  res.json({ ok: true, unmarked: ids.length });
+});
+
 router.get('/tp', (req, res) => {
   const raw = String(req.query.ids || '').trim();
   const ids = raw ? raw.split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean) : [];
@@ -132,7 +152,7 @@ router.patch('/:id/processed', (req, res) => {
 
   const updated = db.prepare(
     `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
-            o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber,
+            o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt,
             c.id as customerId, c.name as customer
      FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = ?`
   ).get(id);
@@ -164,7 +184,7 @@ router.patch('/:id/submit', (req, res) => {
 
   const updated = db.prepare(
     `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
-            o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber,
+            o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt,
             c.id as customerId, c.name as customer
      FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = ?`
   ).get(id);
@@ -325,7 +345,7 @@ router.patch('/:id', (req, res) => {
 
   const updated = db.prepare(
     `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
-              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber,
+              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt,
             c.id as customerId, c.name as customer
      FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = ?`
   ).get(orderId);
