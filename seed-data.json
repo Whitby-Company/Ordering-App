@@ -9015,6 +9015,26 @@
       "stock": 0,
       "price": 5.95,
       "active": false
+    },
+    {
+      "id": "Bazooka:BCBG23247",
+      "brand": "Bazooka",
+      "name": "Juicy Drop Gummy Mystery Cube Peg Bag - Wild Berry",
+      "pack": 12,
+      "packLabel": "12/5oz",
+      "stock": 0,
+      "price": 2.94,
+      "active": true
+    },
+    {
+      "id": "Bazooka:BCBG23245",
+      "brand": "Bazooka",
+      "name": "Juicy Drop Gummy Mystery Cube Peg Bag - Original",
+      "pack": 12,
+      "packLabel": "12/5oz",
+      "stock": 0,
+      "price": 2.94,
+      "active": true
     }
   ]
 }
