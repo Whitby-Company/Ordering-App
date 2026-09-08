@@ -392,6 +392,49 @@ router.delete('/:id', (req, res) => {
   res.json({ id: Number(orderId), deleted: true });
 });
 
+// GET /api/orders/invoice-audit — check invoice-number integrity for submitted
+// orders: the sequence range, any gaps (missing numbers), and any duplicates.
+// Invoice # = explicit invoice_number if set, else order id + offset.
+router.get('/invoice-audit', (req, res) => {
+  const offset = db.getInvoiceOffset();
+  const orders = db.prepare(
+    `SELECT o.id, o.invoice_number AS invoiceNumber, o.status, o.submitted_at AS submittedAt,
+            c.name AS customer
+       FROM orders o LEFT JOIN customers c ON c.id = o.customer_id
+      WHERE o.status != 'pending'`
+  ).all();
+  // Map invoice number -> list of orders that have it.
+  const byNum = new Map();
+  for (const o of orders) {
+    const num = (o.invoiceNumber != null && o.invoiceNumber !== '') ? Number(o.invoiceNumber) : (o.id + offset);
+    if (!byNum.has(num)) byNum.set(num, []);
+    byNum.get(num).push({ id: o.id, customer: o.customer, submittedAt: o.submittedAt });
+  }
+  const nums = [...byNum.keys()].filter(n => Number.isFinite(n)).sort((a, b) => a - b);
+  const min = nums.length ? nums[0] : null;
+  const max = nums.length ? nums[nums.length - 1] : null;
+  // Gaps: numbers missing between min and max.
+  const present = new Set(nums);
+  const gaps = [];
+  if (min != null && max != null && max - min < 100000) {
+    for (let n = min; n <= max; n++) if (!present.has(n)) gaps.push(n);
+  }
+  // Duplicates: numbers assigned to more than one order.
+  const duplicates = [];
+  for (const [num, list] of byNum) if (list.length > 1) duplicates.push({ number: num, orders: list });
+  duplicates.sort((a, b) => a.number - b.number);
+  res.json({
+    offset,
+    count: orders.length,
+    range: { min, max },
+    nextNumber: max != null ? max + 1 : (offset + 1),
+    gapCount: gaps.length,
+    gaps: gaps.slice(0, 500),
+    duplicateCount: duplicates.length,
+    duplicates,
+  });
+});
+
 // GET /api/orders/invoice-offset — the current offset (invoice # = id + offset).
 router.get('/invoice-offset', (req, res) => {
   res.json({ offset: db.getInvoiceOffset() });
