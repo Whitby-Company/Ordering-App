@@ -44,6 +44,19 @@ if (typeof db.seedShipToOnce === 'function') db.seedShipToOnce();
 // Roll out the per-store catalog defaults (mark active items default, activate customers).
 if (typeof db.seedCatalogOnce === 'function') db.seedCatalogOnce();
 
+// Load the QuickBooks-derived per-store catalogs and customer-specific prices so
+// a database reset never wipes customer pricing. (Was previously only loadable via
+// the /apply-catalogs and /apply-price-list endpoints run by hand.)
+try {
+  const { applyCatalogs, applyPriceList } = require('./applyCatalogs');
+  const cat = applyCatalogs(db);
+  const pl = applyPriceList(db);
+  console.log(`Loaded store catalogs: ${cat.customersMatched} stores, ${cat.itemsAdded} items, ${cat.pricesSet} catalog prices.`);
+  console.log(`Applied price list: ${pl.customersUpdated} customers, ${pl.pricesSet} prices set.`);
+} catch (e) {
+  console.warn('Could not load store catalogs/prices during seed:', e.message);
+}
+
 const activeItems = data.items.filter(i => i.active !== false).length;
 const activeCustomers = data.customers.filter(c => c.active !== false).length;
 console.log(

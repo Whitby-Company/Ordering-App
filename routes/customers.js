@@ -255,59 +255,8 @@ router.put('/:id/catalog/items', (req, res) => {
 // and add each matched item as an override with a per-each price (converted from
 // the line's unit using the live item's pack). Reports matched/unmatched.
 router.post('/apply-catalogs', (req, res) => {
-  const { CUSTOMER_CATALOGS } = require('../customerCatalogs');
-  const { normalizeName } = require('../shiptoSeed');
-
-  // Lookup helpers against the LIVE data.
-  const customers = db.prepare('SELECT id, name FROM customers').all();
-  const custByNorm = new Map();
-  for (const c of customers) custByNorm.set(normalizeName(c.name), c);
-  const items = db.prepare('SELECT id, pack FROM items').all();
-  const itemById = new Map();
-  const normId = s => String(s).trim().toLowerCase();
-  const itemByNorm = new Map();
-  for (const it of items) { itemById.set(it.id, it); itemByNorm.set(normId(it.id), it); }
-  const matchItem = sku => {
-    const cands = [sku, sku.toLowerCase().endsWith('c') ? sku.slice(0, -1) : sku + 'c'];
-    for (const v of cands) { const hit = itemByNorm.get(normId(v)); if (hit) return hit; }
-    return null;
-  };
-  // Convert a line's unit price to per-each using the item's pack.
-  const perEach = (unit, unitPrice, pack) => {
-    if (unitPrice == null) return null;
-    const p = Number(pack) || 1;
-    if (unit === 'ea') return unitPrice;
-    if (unit === 'cs') return p ? unitPrice / p : null;
-    return null; // bx/plt/lbs: leave price unset -> base price used
-  };
-
-  const setCat = db.prepare('UPDATE customers SET catalog_on = 1, include_default = 0 WHERE id = ?');
-  const clearCat = db.prepare('DELETE FROM customer_catalog WHERE customer_id = ?');
-  const addCat = db.prepare('INSERT INTO customer_catalog (customer_id, item_id, present, price) VALUES (?,?,1,?) ON CONFLICT(customer_id, item_id) DO UPDATE SET present=1, price=excluded.price');
-
-  const report = { customersMatched: 0, customersUnmatched: [], itemsAdded: 0, itemsUnmatched: 0, pricesSet: 0 };
-  const unmatchedSkus = new Set();
-
-  const tx = db.transaction(() => {
-    for (const [name, entries] of Object.entries(CUSTOMER_CATALOGS)) {
-      const cust = custByNorm.get(normalizeName(name));
-      if (!cust) { report.customersUnmatched.push(name); continue; }
-      report.customersMatched++;
-      setCat.run(cust.id);
-      clearCat.run(cust.id); // rebuild from the QB history
-      for (const e of entries) {
-        const it = matchItem(e.sku);
-        if (!it) { report.itemsUnmatched++; unmatchedSkus.add(e.sku); continue; }
-        const price = perEach(e.unit, e.unitPrice, it.pack);
-        const rounded = price == null ? null : Math.round(price * 10000) / 10000;
-        addCat.run(cust.id, it.id, rounded);
-        report.itemsAdded++;
-        if (rounded != null) report.pricesSet++;
-      }
-    }
-  });
-  tx();
-  report.unmatchedSkuSample = [...unmatchedSkus].slice(0, 40);
+  const { applyCatalogs } = require('../applyCatalogs');
+  const report = applyCatalogs(db);
   res.json({ ok: true, ...report });
 });
 
@@ -333,66 +282,8 @@ router.put('/:id/catalog/price', (req, res) => {
 // from the confirmed price list, using their mapped price level (or the base
 // sell price when unmapped). Only touches items already in the store's catalog.
 router.post('/apply-price-list', (req, res) => {
-  const { PRICE_LIST } = require('../customerPriceList');
-  const { normalizeName } = require('../shiptoSeed');
-  const levelIdx = new Map(PRICE_LIST.levels.map((c, i) => [c, String(i)]));
-
-  const customers = db.prepare('SELECT id, name FROM customers').all();
-  const custByNorm = new Map(customers.map(c => [normalizeName(c.name), c]));
-  const items = db.prepare('SELECT id FROM items').all();
-  const validIds = new Set(items.map(i => i.id));
-  const normId = s => String(s).trim().toLowerCase();
-  const idByNorm = new Map(items.map(i => [normId(i.id), i.id]));
-  const resolveSku = sku => {
-    if (validIds.has(sku)) return sku;
-    const alt = sku.toLowerCase().endsWith('c') ? sku.slice(0, -1) : sku + 'c';
-    return idByNorm.get(normId(sku)) || idByNorm.get(normId(alt)) || null;
-  };
-  // price for an item id at a given level column (or base if no level price)
-  const priceFor = (itemId, levelCol) => {
-    // find the source SKU whose resolved id equals this itemId
-    // (build a reverse index once)
-    return null; // replaced below by prebuilt map
-  };
-
-  // Prebuild: resolvedItemId -> { base, byLevelIdx }
-  const priceByItem = new Map();
-  for (const [sku, d] of Object.entries(PRICE_LIST.prices)) {
-    const id = resolveSku(sku);
-    if (!id) continue;
-    if (!priceByItem.has(id)) priceByItem.set(id, { base: d.b, lv: d.l || {} });
-    else {
-      const cur = priceByItem.get(id);
-      if (cur.base == null && d.b != null) cur.base = d.b;
-      Object.assign(cur.lv, d.l || {});
-    }
-  }
-
-  const getCatalogItems = db.prepare('SELECT item_id FROM customer_catalog WHERE customer_id = ? AND present = 1');
-  const setPrice = db.prepare('UPDATE customer_catalog SET price = ? WHERE customer_id = ? AND item_id = ?');
-
-  const report = { customersUpdated: 0, pricesSet: 0, usedBase: 0, noPrice: 0, unmappedCustomers: [] };
-  const tx = db.transaction(() => {
-    for (const [name, levelCol] of Object.entries(PRICE_LIST.mapping)) {
-      const cust = custByNorm.get(normalizeName(name));
-      if (!cust) continue;
-      const lidx = levelCol ? levelIdx.get(levelCol) : null;
-      let any = false;
-      for (const row of getCatalogItems.all(cust.id)) {
-        const pd = priceByItem.get(row.item_id);
-        if (!pd) { report.noPrice++; continue; }
-        let price = (lidx != null && pd.lv[lidx] != null) ? pd.lv[lidx] : pd.base;
-        if (lidx != null && pd.lv[lidx] == null) report.usedBase++;
-        if (!levelCol) report.usedBase++;
-        if (price == null) { report.noPrice++; continue; }
-        setPrice.run(price, cust.id, row.item_id);
-        report.pricesSet++; any = true;
-      }
-      if (!levelCol) report.unmappedCustomers.push(name);
-      if (any) report.customersUpdated++;
-    }
-  });
-  tx();
+  const { applyPriceList } = require('../applyCatalogs');
+  const report = applyPriceList(db);
   res.json({ ok: true, ...report });
 });
 
