@@ -116,6 +116,18 @@ if (!itemColumns.includes('notes')) {
   db.exec('ALTER TABLE items ADD COLUMN notes TEXT');
 }
 // Audit trail of stock changes: who changed an item's stock, from -> to, when.
+// Remembered manual matches from order-file uploads: a file's item key
+// (code/upc/description) -> the item the user chose. Lets recurring mismatches
+// (e.g. Bar None on 7-Eleven orders) auto-match next time.
+db.exec(`CREATE TABLE IF NOT EXISTS import_map (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source TEXT,
+  file_key TEXT NOT NULL,
+  item_id TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE(source, file_key)
+)`);
+
 db.exec(`CREATE TABLE IF NOT EXISTS stock_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   item_id TEXT NOT NULL,

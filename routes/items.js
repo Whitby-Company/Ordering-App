@@ -349,6 +349,22 @@ router.post('/consolidate', (req, res) => {
   res.json(consolidate(db, { apply: true }));
 });
 
+// GET /api/items/import-map — all remembered upload matches (file key -> item).
+router.get('/import-map', (req, res) => {
+  const rows = db.prepare('SELECT source, file_key AS fileKey, item_id AS itemId FROM import_map').all();
+  res.json(rows);
+});
+// POST /api/items/import-map { source, fileKey, itemId } — remember a match.
+router.post('/import-map', (req, res) => {
+  const { source, fileKey, itemId } = req.body || {};
+  if (!fileKey || !itemId) return res.status(400).json({ error: 'fileKey and itemId are required' });
+  db.prepare(`INSERT INTO import_map (source, file_key, item_id, created_at)
+              VALUES (?, ?, ?, ?)
+              ON CONFLICT(source, file_key) DO UPDATE SET item_id = excluded.item_id, created_at = excluded.created_at`)
+    .run(source || null, String(fileKey), String(itemId), new Date().toISOString());
+  res.json({ ok: true });
+});
+
 // GET /api/items/stock-log/recent — the whole recent trail across items.
 router.get('/stock-log/recent', (req, res) => {
   const rows = db.prepare(
