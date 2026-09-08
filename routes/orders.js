@@ -546,6 +546,68 @@ router.post('/invoice-reconcile', (req, res) => {
   // Prefer the best suggestion per app invoice (highest item score).
   suggestions.sort((a, b) => (b.itemScore || 0) - (a.itemScore || 0));
 
+  // --- Comprehensive content match: for EVERY app invoice, find its best QB
+  // content match (customer + total, scored by item overlap), and note whether
+  // the invoice numbers also agree. ---
+  // Item names for ALL orders (not just unmatched ones).
+  const allItemNames = new Map();
+  {
+    const rows3 = db.prepare(
+      `SELECT ol.order_id AS orderId, i.name AS name FROM order_lines ol LEFT JOIN items i ON i.id = ol.item_id`
+    ).all();
+    for (const r of rows3) {
+      if (!allItemNames.has(r.orderId)) allItemNames.set(r.orderId, []);
+      if (r.name) allItemNames.get(r.orderId).push(r.name);
+    }
+  }
+  // QB invoices with memo word-sets (all of them).
+  const qbAll = [...qbNums.entries()].map(([num, meta]) => ({
+    number: num, customer: meta.customer || '', date: meta.date || '',
+    total: meta.total != null ? Number(meta.total) : null,
+    memoWords: (meta.memos || []).map(normName),
+  }));
+  const contentMatches = [];
+  for (const [num, orderId] of appByNum) {
+    const appTotal = appTotalById.get(num);
+    if (appTotal == null) continue;
+    const appCustomer = appNums.get(num) || '';
+    const appItemWords = (allItemNames.get(orderId) || []).map(normName);
+    let best = null;
+    for (const q of qbAll) {
+      if (q.total == null) continue;
+      const totalClose = Math.abs(appTotal - q.total) <= 0.02;
+      if (!totalClose) continue;
+      const custMatch = appCustomer && q.customer && (appCustomer.toLowerCase().includes(q.customer.toLowerCase().slice(0, 6)) || q.customer.toLowerCase().includes(appCustomer.toLowerCase().slice(0, 6)));
+      // Item overlap score.
+      let hit = 0;
+      for (const aw of appItemWords) {
+        for (const qw of q.memoWords) {
+          let common = 0; for (const w of aw) if (qw.has(w)) common++;
+          if (aw.size && common / aw.size >= 0.5) { hit++; break; }
+        }
+      }
+      const itemScore = appItemWords.length ? hit / appItemWords.length : 0;
+      // Rank candidates: exact number match first, then customer match, then item score.
+      const rank = (q.number === num ? 1000 : 0) + (custMatch ? 100 : 0) + itemScore * 10;
+      if (!best || rank > best.rank) best = { q, custMatch, hit, itemScore, rank };
+    }
+    contentMatches.push({
+      appNumber: num,
+      customer: appCustomer,
+      appTotal,
+      qbNumber: best ? best.q.number : null,
+      qbCustomer: best ? best.q.customer : null,
+      qbTotal: best ? best.q.total : null,
+      numbersAgree: best ? best.q.number === num : null,
+      customerMatch: best ? best.custMatch : null,
+      appItems: appItemWords.length,
+      itemsMatched: best ? best.hit : 0,
+      itemScore: best ? Math.round(best.itemScore * 100) : null,
+      hasMatch: !!best,
+    });
+  }
+  contentMatches.sort((a, b) => a.appNumber - b.appNumber);
+
   // Gaps across the COMBINED set (numbers used by neither, within the overall range).
   const all = [...appNums.keys(), ...qbNums.keys()];
   const min = all.length ? Math.min(...all) : null;
@@ -568,6 +630,8 @@ router.post('/invoice-reconcile', (req, res) => {
     onlyQb: onlyQb.slice(0, 1000),
     suggestions: suggestions.slice(0, 500),
     suggestionCount: suggestions.length,
+    contentMatches: contentMatches.slice(0, 3000),
+    contentMatchCount: contentMatches.length,
     range: { min, max },
     gapCount: gaps.length,
     gaps: gaps.slice(0, 1000),
