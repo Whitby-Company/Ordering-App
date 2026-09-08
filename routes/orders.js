@@ -492,6 +492,63 @@ router.post('/invoice-reconcile', (req, res) => {
   onlyQb.sort((a, b) => a.number - b.number);
   inBoth.sort((a, b) => a.number - b.number);
 
+  // --- Suggested matches: differently-numbered invoices that look like the same
+  // invoice (same customer + total), with item overlap as a confidence signal. ---
+  // Pull item names for the app orders that didn't number-match.
+  const normName = s => new Set(String(s || '').toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2));
+  // Map app invoice number -> { orderId, itemWords:Set, total }
+  const appByNum = new Map();
+  for (const o of orders) {
+    const num = (o.invoiceNumber != null && o.invoiceNumber !== '') ? Number(o.invoiceNumber) : (o.id + offset);
+    appByNum.set(num, o.id);
+  }
+  const onlyAppNums = new Set(onlyApp.map(a => a.number));
+  const itemNamesByOrder = new Map();
+  if (onlyAppNums.size) {
+    const rows2 = db.prepare(
+      `SELECT ol.order_id AS orderId, i.name AS name FROM order_lines ol LEFT JOIN items i ON i.id = ol.item_id`
+    ).all();
+    for (const r of rows2) {
+      if (!itemNamesByOrder.has(r.orderId)) itemNamesByOrder.set(r.orderId, []);
+      if (r.name) itemNamesByOrder.get(r.orderId).push(r.name);
+    }
+  }
+  // Build QB memo word-sets for only-QB invoices.
+  const qbOnly = onlyQb.map(q => ({ ...q, memoWords: (q.memos || []).map(normName) }));
+  const suggestions = [];
+  const TAX = 0.005;
+  for (const a of onlyApp) {
+    const orderId = appByNum.get(a.number);
+    const appTotal = appTotalById.get(a.number);
+    if (appTotal == null) continue;
+    const appItemWords = (itemNamesByOrder.get(orderId) || []).map(normName);
+    // Candidate QB invoices: same customer (loose) + total within tax tolerance.
+    for (const q of qbOnly) {
+      if (q.qMatched) continue;
+      const custMatch = a.customer && q.customer && (a.customer.toLowerCase().includes(q.customer.toLowerCase().slice(0, 6)) || q.customer.toLowerCase().includes(a.customer.toLowerCase().slice(0, 6)));
+      const qbTotal = q.total != null ? Number(q.total) : null;
+      if (qbTotal == null) continue;
+      const totalClose = Math.abs(appTotal - qbTotal) <= 0.02;
+      if (!custMatch || !totalClose) continue;
+      // Item overlap: fraction of app items whose words appear in some QB memo.
+      let hit = 0;
+      for (const aw of appItemWords) {
+        for (const qw of q.memoWords) {
+          let common = 0; for (const w of aw) if (qw.has(w)) common++;
+          if (aw.size && common / aw.size >= 0.5) { hit++; break; }
+        }
+      }
+      const itemScore = appItemWords.length ? hit / appItemWords.length : null;
+      suggestions.push({
+        appNumber: a.number, qbNumber: q.number, customer: a.customer,
+        appTotal, qbTotal, appItems: appItemWords.length, itemsMatched: hit,
+        itemScore: itemScore != null ? Math.round(itemScore * 100) : null,
+      });
+    }
+  }
+  // Prefer the best suggestion per app invoice (highest item score).
+  suggestions.sort((a, b) => (b.itemScore || 0) - (a.itemScore || 0));
+
   // Gaps across the COMBINED set (numbers used by neither, within the overall range).
   const all = [...appNums.keys(), ...qbNums.keys()];
   const min = all.length ? Math.min(...all) : null;
@@ -512,6 +569,8 @@ router.post('/invoice-reconcile', (req, res) => {
     onlyQbCount: onlyQb.length,
     onlyApp: onlyApp.slice(0, 1000),
     onlyQb: onlyQb.slice(0, 1000),
+    suggestions: suggestions.slice(0, 500),
+    suggestionCount: suggestions.length,
     range: { min, max },
     gapCount: gaps.length,
     gaps: gaps.slice(0, 1000),
