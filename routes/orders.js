@@ -526,7 +526,7 @@ router.post('/invoice-reconcile', (req, res) => {
       const qbTotal = q.total != null ? Number(q.total) : null;
       if (qbTotal == null) continue;
       const totalClose = Math.abs(appTotal - qbTotal) <= 0.02;
-      if (!custMatch || !totalClose) continue;
+      if (!totalClose) continue; // total must match; customer is a bonus, not required
       // Item overlap: fraction of app items whose words appear in some QB memo.
       let hit = 0;
       for (const aw of appItemWords) {
@@ -536,10 +536,14 @@ router.post('/invoice-reconcile', (req, res) => {
         }
       }
       const itemScore = appItemWords.length ? hit / appItemWords.length : null;
+      // Only suggest if there's SOME item overlap OR the customer matches — avoids
+      // pairing unrelated invoices that merely share a dollar total.
+      if (!custMatch && (itemScore == null || itemScore < 0.3)) continue;
       suggestions.push({
         appNumber: a.number, qbNumber: q.number, customer: a.customer,
         appTotal, qbTotal, appItems: appItemWords.length, itemsMatched: hit,
         itemScore: itemScore != null ? Math.round(itemScore * 100) : null,
+        customerMatch: custMatch,
       });
     }
   }
@@ -587,8 +591,10 @@ router.post('/invoice-reconcile', (req, res) => {
         }
       }
       const itemScore = appItemWords.length ? hit / appItemWords.length : 0;
-      // Rank candidates: exact number match first, then customer match, then item score.
-      const rank = (q.number === num ? 1000 : 0) + (custMatch ? 100 : 0) + itemScore * 10;
+      // Rank: exact-number match wins; otherwise item overlap is the primary
+      // signal (customer is only a small tiebreaker, so matches still work when
+      // the customer name differs between the app and QuickBooks).
+      const rank = (q.number === num ? 10000 : 0) + itemScore * 1000 + (custMatch ? 50 : 0);
       if (!best || rank > best.rank) best = { q, custMatch, hit, itemScore, rank };
     }
     contentMatches.push({
