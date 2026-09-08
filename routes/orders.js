@@ -446,10 +446,23 @@ router.post('/invoice-reconcile', (req, res) => {
        FROM orders o LEFT JOIN customers c ON c.id = o.customer_id
       WHERE o.status != 'pending'`
   ).all();
-  const appNums = new Map(); // number -> customer
+  // App order total (subtotal of lines × pack, + 0.5% sales tax) per order id,
+  // to match how invoices are totaled. Tax rate mirrors the invoice renderer.
+  const SALES_TAX_RATE = 0.005;
+  const lineSums = db.prepare(
+    `SELECT ol.order_id AS orderId,
+            SUM(ol.qty * COALESCE(ol.pack, i.pack, 1) * COALESCE(ol.price, i.price, 0)) AS subtotal
+       FROM order_lines ol LEFT JOIN items i ON i.id = ol.item_id
+      GROUP BY ol.order_id`
+  ).all();
+  const subtotalByOrder = new Map(lineSums.map(r => [r.orderId, r.subtotal || 0]));
+  const appTotalById = new Map();
+  const appNums = new Map(); // number -> { customer, appTotal }
   for (const o of orders) {
     const num = (o.invoiceNumber != null && o.invoiceNumber !== '') ? Number(o.invoiceNumber) : (o.id + offset);
-    if (Number.isFinite(num)) appNums.set(num, o.customer);
+    const sub = subtotalByOrder.get(o.id) || 0;
+    const total = Math.round((sub + Math.round(sub * SALES_TAX_RATE * 100) / 100) * 100) / 100;
+    if (Number.isFinite(num)) { appNums.set(num, o.customer); appTotalById.set(num, total); }
   }
   const qbNums = new Map(); // number -> whatever meta was passed (customer/date/total)
   for (const q of qbList) {
@@ -458,10 +471,16 @@ router.post('/invoice-reconcile', (req, res) => {
   }
 
   const inBoth = [], onlyApp = [], onlyQb = [];
+  let totalMismatchCount = 0;
   for (const [num, customer] of appNums) {
     if (qbNums.has(num)) {
       const meta = qbNums.get(num) || {};
-      inBoth.push({ number: num, ...meta }); // QB details (customer, date, total)
+      const appTotal = appTotalById.get(num);
+      const qbTotal = meta.total != null ? Number(meta.total) : null;
+      const diff = (appTotal != null && qbTotal != null) ? Math.round((appTotal - qbTotal) * 100) / 100 : null;
+      const totalsMatch = diff != null ? Math.abs(diff) <= 0.02 : null; // within 2¢ = match
+      if (totalsMatch === false) totalMismatchCount++;
+      inBoth.push({ number: num, customer: meta.customer || customer, date: meta.date || '', qbTotal, appTotal, diff, totalsMatch });
     } else {
       onlyApp.push({ number: num, customer });
     }
@@ -488,6 +507,7 @@ router.post('/invoice-reconcile', (req, res) => {
     qbCount: qbNums.size,
     inBothCount: inBoth.length,
     inBoth: inBoth.slice(0, 2000),
+    totalMismatchCount,
     onlyAppCount: onlyApp.length,
     onlyQbCount: onlyQb.length,
     onlyApp: onlyApp.slice(0, 1000),
