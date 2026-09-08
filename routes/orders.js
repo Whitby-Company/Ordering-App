@@ -446,9 +446,8 @@ router.post('/invoice-reconcile', (req, res) => {
        FROM orders o LEFT JOIN customers c ON c.id = o.customer_id
       WHERE o.status != 'pending'`
   ).all();
-  // App order total (subtotal of lines × pack, + 0.5% sales tax) per order id,
-  // to match how invoices are totaled. Tax rate mirrors the invoice renderer.
-  const SALES_TAX_RATE = 0.005;
+  // App order subtotal (lines × pack × price, NO tax) per order id. The
+  // QuickBooks export totals do not include tax, so we compare tax-free subtotals.
   const lineSums = db.prepare(
     `SELECT ol.order_id AS orderId,
             SUM(ol.qty * COALESCE(ol.pack, i.pack, 1) * COALESCE(ol.price, i.price, 0)) AS subtotal
@@ -460,9 +459,8 @@ router.post('/invoice-reconcile', (req, res) => {
   const appNums = new Map(); // number -> { customer, appTotal }
   for (const o of orders) {
     const num = (o.invoiceNumber != null && o.invoiceNumber !== '') ? Number(o.invoiceNumber) : (o.id + offset);
-    const sub = subtotalByOrder.get(o.id) || 0;
-    const total = Math.round((sub + Math.round(sub * SALES_TAX_RATE * 100) / 100) * 100) / 100;
-    if (Number.isFinite(num)) { appNums.set(num, o.customer); appTotalById.set(num, total); }
+    const sub = Math.round((subtotalByOrder.get(o.id) || 0) * 100) / 100; // subtotal, no tax
+    if (Number.isFinite(num)) { appNums.set(num, o.customer); appTotalById.set(num, sub); }
   }
   const qbNums = new Map(); // number -> whatever meta was passed (customer/date/total)
   for (const q of qbList) {
@@ -516,7 +514,6 @@ router.post('/invoice-reconcile', (req, res) => {
   // Build QB memo word-sets for only-QB invoices.
   const qbOnly = onlyQb.map(q => ({ ...q, memoWords: (q.memos || []).map(normName) }));
   const suggestions = [];
-  const TAX = 0.005;
   for (const a of onlyApp) {
     const orderId = appByNum.get(a.number);
     const appTotal = appTotalById.get(a.number);
