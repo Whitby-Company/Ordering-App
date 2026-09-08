@@ -392,6 +392,25 @@ router.delete('/stock-log/:logId', (req, res) => {
   res.json({ ok: true, reverted, newStock, isLatest });
 });
 
+// POST /api/items/:id/stock-log — add a history entry WITHOUT changing stock.
+// For recording a past change that wasn't logged (e.g. a PO received before
+// receipt-logging existed). Uses the item's current stock as new_stock; old_stock
+// = current - delta so the entry reads correctly. Body: { delta, reason, changedBy }.
+router.post('/:id/stock-log', (req, res) => {
+  const itemId = req.params.id;
+  const { delta, reason, changedBy, newStock: newStockOverride } = req.body || {};
+  const d = Number(delta);
+  if (!Number.isFinite(d)) return res.status(400).json({ error: 'delta must be a number' });
+  const item = db.prepare('SELECT stock FROM items WHERE id = ?').get(itemId);
+  if (!item) return res.status(404).json({ error: 'Item not found' });
+  const newStock = newStockOverride != null ? Number(newStockOverride) : item.stock;
+  const oldStock = newStock - d;
+  db.prepare(`INSERT INTO stock_log (item_id, old_stock, new_stock, delta, changed_by, reason, changed_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?)`)
+    .run(itemId, oldStock, newStock, d, changedBy || null, reason || null, new Date().toISOString());
+  res.json({ ok: true, itemId, oldStock, newStock, delta: d });
+});
+
 // GET /api/items/stock-log/recent — the whole recent trail across items.
 router.get('/stock-log/recent', (req, res) => {
   const rows = db.prepare(
