@@ -126,7 +126,7 @@ router.patch('/:id', (req, res) => {
 //   or  { all: true } to receive everything outstanding.
 router.post('/:id/receive', (req, res) => {
   const id = Number(req.params.id);
-  const po = db.prepare('SELECT id, status FROM purchase_orders WHERE id = ?').get(id);
+  const po = db.prepare('SELECT id, status, reference FROM purchase_orders WHERE id = ?').get(id);
   if (!po) return res.status(404).json({ error: 'Purchase order not found' });
   if (po.status === 'cancelled') return res.status(400).json({ error: 'PO is cancelled' });
   const lines = db.prepare('SELECT id, item_id, qty_ordered, qty_received FROM po_lines WHERE po_id = ?').all(id);
@@ -136,7 +136,12 @@ router.post('/:id/receive', (req, res) => {
     : ((req.body && req.body.receipts) || []);
 
   const addStock = db.prepare('UPDATE items SET stock = stock + ? WHERE id = ?');
+  const getStock = db.prepare('SELECT stock FROM items WHERE id = ?');
   const setRecv = db.prepare('UPDATE po_lines SET qty_received = qty_received + ? WHERE id = ?');
+  const logStock = db.prepare(`INSERT INTO stock_log (item_id, old_stock, new_stock, delta, changed_by, reason, changed_at)
+                               VALUES (?, ?, ?, ?, ?, ?, ?)`);
+  const who = (req.body && req.body.receivedBy) ? String(req.body.receivedBy) : null;
+  const poRef = po.reference || po.id;
   let received = 0;
   const tx = db.transaction(() => {
     for (const r of receipts) {
@@ -147,7 +152,11 @@ router.post('/:id/receive', (req, res) => {
       const take = Math.min(qty, remaining);
       if (take <= 0) continue;
       setRecv.run(take, line.id);
+      const cur = getStock.get(r.itemId);
+      const oldStock = cur ? cur.stock : 0;
       addStock.run(take, r.itemId); // incoming -> on-hand
+      // Record it in the item's stock history like any other stock change.
+      logStock.run(r.itemId, oldStock, oldStock + take, take, who, `Received PO ${poRef}`, new Date().toISOString());
       received += take;
     }
   });
