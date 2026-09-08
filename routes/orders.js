@@ -233,10 +233,11 @@ router.post('/', (req, res) => {
     if (unit === 'case' && !item.case_size) unit = 'box'; // item has no case unit
     // Effective pack (eaches per ordered unit) and per-each price for this unit.
     const pack = unit === 'case' ? (item.pack * item.case_size) : item.pack;
-    // Price: the store's catalog price if this is their default unit; otherwise
-    // the item's base price for the unit (case_price for case, price for box).
+    // Price: the store's catalog price (a per-each price) if set for this item;
+    // otherwise the item's base price for the unit (case_price for case, price for
+    // box). The catalog price is per-each, so it applies to either unit.
     let price;
-    if (cat && cat.price != null && (cat.unit || 'box') === unit) price = cat.price;
+    if (cat && cat.price != null) price = cat.price;
     else price = unit === 'case' ? (item.case_price != null ? item.case_price : item.price) : item.price;
     // Stock is tracked in eaches at the box level; qty of this unit uses `pack` eaches.
     resolvedLines.push({ item, qty, unit, pack, price });
@@ -281,7 +282,7 @@ router.post('/', (req, res) => {
     submittedBy: cleanSubmittedBy,
     status,
     notes: cleanNotes,
-    lines: resolvedLines.map(({ item, qty }) => ({ id: item.id, name: item.name, brand: item.brand, price: item.price, pack: item.pack, qty })),
+    lines: resolvedLines.map(({ item, qty, price, unit, pack }) => ({ id: item.id, name: item.name, brand: item.brand, price, pack, unit, qty })),
   });
 });
 
