@@ -13,7 +13,7 @@ const router = express.Router();
 // Optional query params: ?brand=Oberto  ?lowStockMax=5  ?includeInactive=true
 router.get('/', (req, res) => {
   const { brand, lowStockMax, includeInactive } = req.query;
-  let sql = 'SELECT id, brand, name, stock, price, pack, packLabel, imageUrl, upc, active, contains, is_default as isDefault, case_size as caseSize, case_price as casePrice, cost FROM items WHERE 1=1';
+  let sql = 'SELECT id, brand, name, stock, price, pack, packLabel, imageUrl, upc, active, contains, is_default as isDefault, case_size as caseSize, case_price as casePrice, cost, notes FROM items WHERE 1=1';
   const params = [];
 
   if (includeInactive !== 'true') {
@@ -73,8 +73,8 @@ router.post('/', (req, res) => {
 // (Stock corrections here are for fixing mistakes — normal stock changes
 // should happen via orders.)
 router.patch('/:id', (req, res) => {
-  const { stock, name, brand, pack, packLabel, imageUrl, upc, price, active, contains, isDefault, cost } = req.body;
-  if (stock === undefined && name === undefined && brand === undefined && pack === undefined && packLabel === undefined && imageUrl === undefined && upc === undefined && price === undefined && active === undefined && contains === undefined && isDefault === undefined && cost === undefined) {
+  const { stock, name, brand, pack, packLabel, imageUrl, upc, price, active, contains, isDefault, cost, notes, changedBy, reason } = req.body;
+  if (stock === undefined && name === undefined && brand === undefined && pack === undefined && packLabel === undefined && imageUrl === undefined && upc === undefined && price === undefined && active === undefined && contains === undefined && isDefault === undefined && cost === undefined && notes === undefined) {
     return res.status(400).json({ error: 'At least one field must be provided' });
   }
   if (stock !== undefined && Number.isNaN(Number(stock))) {
@@ -109,6 +109,7 @@ router.patch('/:id', (req, res) => {
   if (active !== undefined) { updates.push('active = ?'); params.push(active ? 1 : 0); }
   if (isDefault !== undefined) { updates.push('is_default = ?'); params.push(isDefault ? 1 : 0); }
   if (cost !== undefined) { updates.push('cost = ?'); params.push(cost === '' || cost === null ? null : Number(cost)); }
+  if (notes !== undefined) { updates.push('notes = ?'); params.push((typeof notes === 'string' && notes.trim()) ? notes.trim() : null); }
   if (contains !== undefined) {
     // Normalize to an array of {qty, name, upc}; store as JSON (null if empty).
     let arr = [];
@@ -121,8 +122,26 @@ router.patch('/:id', (req, res) => {
   }
   params.push(req.params.id);
 
+  // Capture the old stock before updating so we can log the change.
+  let oldStock = null;
+  if (stock !== undefined) {
+    const cur = db.prepare('SELECT stock FROM items WHERE id = ?').get(req.params.id);
+    oldStock = cur ? cur.stock : null;
+  }
+
   const info = db.prepare(`UPDATE items SET ${updates.join(', ')} WHERE id = ?`).run(...params);
   if (info.changes === 0) return res.status(404).json({ error: 'Item not found' });
+
+  // Record the stock change in the audit trail (only when stock actually changed).
+  if (stock !== undefined && Number(stock) !== oldStock) {
+    db.prepare(`INSERT INTO stock_log (item_id, old_stock, new_stock, delta, changed_by, reason, changed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
+      req.params.id, oldStock, Number(stock), Number(stock) - (oldStock || 0),
+      (typeof changedBy === 'string' && changedBy.trim()) ? changedBy.trim() : null,
+      (typeof reason === 'string' && reason.trim()) ? reason.trim() : null,
+      new Date().toISOString()
+    );
+  }
 
   const result = { id: req.params.id };
   if (stock !== undefined) result.stock = Number(stock);
@@ -328,6 +347,27 @@ router.get('/consolidate-preview', (req, res) => {
 router.post('/consolidate', (req, res) => {
   const { consolidate } = require('../consolidate');
   res.json(consolidate(db, { apply: true }));
+});
+
+// GET /api/items/stock-log/recent — the whole recent trail across items.
+router.get('/stock-log/recent', (req, res) => {
+  const rows = db.prepare(
+    `SELECT sl.id, sl.item_id AS itemId, i.name AS item, i.brand,
+            sl.old_stock AS oldStock, sl.new_stock AS newStock, sl.delta,
+            sl.changed_by AS changedBy, sl.reason, sl.changed_at AS changedAt
+       FROM stock_log sl LEFT JOIN items i ON i.id = sl.item_id
+      ORDER BY sl.id DESC LIMIT 300`
+  ).all();
+  res.json(rows);
+});
+// GET /api/items/:id/stock-log — change history for one item (newest first).
+router.get('/:id/stock-log', (req, res) => {
+  const rows = db.prepare(
+    `SELECT id, old_stock AS oldStock, new_stock AS newStock, delta,
+            changed_by AS changedBy, reason, changed_at AS changedAt
+       FROM stock_log WHERE item_id = ? ORDER BY id DESC LIMIT 200`
+  ).all(req.params.id);
+  res.json(rows);
 });
 
 module.exports = router;

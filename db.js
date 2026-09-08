@@ -111,6 +111,21 @@ if (!itemColumns.includes('case_price')) {
 if (!itemColumns.includes('cost')) {
   db.exec('ALTER TABLE items ADD COLUMN cost REAL');
 }
+// Free-text note per item (e.g. "backordered until March").
+if (!itemColumns.includes('notes')) {
+  db.exec('ALTER TABLE items ADD COLUMN notes TEXT');
+}
+// Audit trail of stock changes: who changed an item's stock, from -> to, when.
+db.exec(`CREATE TABLE IF NOT EXISTS stock_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id TEXT NOT NULL,
+  old_stock INTEGER,
+  new_stock INTEGER,
+  delta INTEGER,
+  changed_by TEXT,
+  reason TEXT,
+  changed_at TEXT NOT NULL
+)`);
 if (!itemColumns.includes('imageUrl')) {
   db.exec('ALTER TABLE items ADD COLUMN imageUrl TEXT');
 }
