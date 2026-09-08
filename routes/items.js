@@ -365,6 +365,33 @@ router.post('/import-map', (req, res) => {
   res.json({ ok: true });
 });
 
+// DELETE /api/items/stock-log/:logId — remove a stock-change entry. If it's the
+// item's MOST RECENT change, also revert the item's stock to that entry's old
+// value (safe undo). For older entries, only the record is deleted (reverting
+// would clobber later changes). Returns { reverted, newStock }.
+router.delete('/stock-log/:logId', (req, res) => {
+  const logId = parseInt(req.params.logId, 10);
+  if (!logId) return res.status(400).json({ error: 'Invalid log id' });
+  const entry = db.prepare('SELECT * FROM stock_log WHERE id = ?').get(logId);
+  if (!entry) return res.status(404).json({ error: 'Log entry not found' });
+  // Is this the most recent change for that item?
+  const latest = db.prepare('SELECT id FROM stock_log WHERE item_id = ? ORDER BY id DESC LIMIT 1').get(entry.item_id);
+  const isLatest = latest && latest.id === logId;
+  let reverted = false, newStock = null;
+  const tx = db.transaction(() => {
+    if (isLatest && entry.old_stock != null) {
+      db.prepare('UPDATE items SET stock = ? WHERE id = ?').run(entry.old_stock, entry.item_id);
+      reverted = true; newStock = entry.old_stock;
+    } else {
+      const cur = db.prepare('SELECT stock FROM items WHERE id = ?').get(entry.item_id);
+      newStock = cur ? cur.stock : null;
+    }
+    db.prepare('DELETE FROM stock_log WHERE id = ?').run(logId);
+  });
+  tx();
+  res.json({ ok: true, reverted, newStock, isLatest });
+});
+
 // GET /api/items/stock-log/recent — the whole recent trail across items.
 router.get('/stock-log/recent', (req, res) => {
   const rows = db.prepare(
