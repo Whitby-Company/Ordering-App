@@ -286,6 +286,35 @@ router.post('/', (req, res) => {
   });
 });
 
+// PATCH /api/orders/:id/invoice-number — set (or clear) an order's explicit
+// invoice number, to line it up with QuickBooks. Body: { invoiceNumber } (a
+// number, or null/'' to revert to the automatic id+offset number).
+router.patch('/:id/invoice-number', (req, res) => {
+  const orderId = Number(req.params.id);
+  const order = db.prepare('SELECT id, status FROM orders WHERE id = ?').get(orderId);
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+  const raw = req.body ? req.body.invoiceNumber : undefined;
+  let value = null;
+  if (raw !== null && raw !== '' && raw !== undefined) {
+    value = Number(raw);
+    if (!Number.isFinite(value) || value < 1 || !Number.isInteger(value)) {
+      return res.status(400).json({ error: 'invoiceNumber must be a whole number, or blank to reset' });
+    }
+  }
+  // Warn if another order already uses this number (explicit or via id+offset).
+  let duplicateOf = null;
+  if (value != null) {
+    const offset = db.getInvoiceOffset();
+    const others = db.prepare("SELECT id, invoice_number AS invoiceNumber FROM orders WHERE id != ? AND status != 'pending'").all(orderId);
+    for (const o of others) {
+      const n = (o.invoiceNumber != null && o.invoiceNumber !== '') ? Number(o.invoiceNumber) : (o.id + offset);
+      if (n === value) { duplicateOf = o.id; break; }
+    }
+  }
+  db.prepare('UPDATE orders SET invoice_number = ? WHERE id = ?').run(value, orderId);
+  res.json({ ok: true, id: orderId, invoiceNumber: value, duplicateOf });
+});
+
 // PATCH /api/orders/:id — edit an existing order's customer, delivery date,
 // and/or line items. Reconciles stock by the NET difference per item (an
 // item whose qty increases consumes more stock; a decrease or removal
