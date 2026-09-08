@@ -606,9 +606,12 @@ router.post('/invoice-reconcile', (req, res) => {
     const appCustomer = appNums.get(num) || '';
     const appItemWords = (allItemNames.get(orderId) || []).map(normName);
     let best = null;
+    let closest = null; // nearest QB invoice by total, even if outside the match threshold
     for (const q of qbAll) {
       if (q.total == null) continue;
-      const totalClose = Math.abs(appTotal - q.total) <= 0.02;
+      const totalDiff = Math.abs(appTotal - q.total);
+      if (!closest || totalDiff < closest.diff) closest = { q, diff: totalDiff };
+      const totalClose = totalDiff <= 0.02;
       if (!totalClose) continue;
       const custMatch = appCustomer && q.customer && (appCustomer.toLowerCase().includes(q.customer.toLowerCase().slice(0, 6)) || q.customer.toLowerCase().includes(appCustomer.toLowerCase().slice(0, 6)));
       // Item overlap score.
@@ -639,6 +642,13 @@ router.post('/invoice-reconcile', (req, res) => {
       itemsMatched: best ? best.hit : 0,
       itemScore: best ? Math.round(best.itemScore * 100) : null,
       hasMatch: !!best,
+      // For no-match rows: the nearest QB invoice by total, so you can tell a
+      // near-miss (small diff = likely same invoice, slightly different total)
+      // from something genuinely absent (large diff).
+      closestNumber: (!best && closest) ? closest.q.number : null,
+      closestCustomer: (!best && closest) ? closest.q.customer : null,
+      closestTotal: (!best && closest) ? closest.q.total : null,
+      closestDiff: (!best && closest) ? Math.round((closest.q.total - appTotal) * 100) / 100 : null,
     });
   }
   contentMatches.sort((a, b) => a.appNumber - b.appNumber);
