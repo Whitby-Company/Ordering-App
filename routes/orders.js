@@ -435,6 +435,64 @@ router.get('/invoice-audit', (req, res) => {
   });
 });
 
+// POST /api/orders/invoice-reconcile — compare the app's invoice numbers against
+// a list of QuickBooks invoice numbers (from a QB export). Body: { qbNumbers: [..] }.
+// Reports: in both, only in app, only in QB, and gaps in the combined sequence.
+router.post('/invoice-reconcile', (req, res) => {
+  const qbList = (req.body && req.body.qbNumbers) || [];
+  const offset = db.getInvoiceOffset();
+  const orders = db.prepare(
+    `SELECT o.id, o.invoice_number AS invoiceNumber, c.name AS customer
+       FROM orders o LEFT JOIN customers c ON c.id = o.customer_id
+      WHERE o.status != 'pending'`
+  ).all();
+  const appNums = new Map(); // number -> customer
+  for (const o of orders) {
+    const num = (o.invoiceNumber != null && o.invoiceNumber !== '') ? Number(o.invoiceNumber) : (o.id + offset);
+    if (Number.isFinite(num)) appNums.set(num, o.customer);
+  }
+  const qbNums = new Map(); // number -> whatever meta was passed (customer/date/total)
+  for (const q of qbList) {
+    const num = Number(typeof q === 'object' ? q.number : q);
+    if (Number.isFinite(num)) qbNums.set(num, typeof q === 'object' ? q : {});
+  }
+
+  const inBoth = [], onlyApp = [], onlyQb = [];
+  for (const [num, customer] of appNums) {
+    if (qbNums.has(num)) inBoth.push(num);
+    else onlyApp.push({ number: num, customer });
+  }
+  for (const [num, meta] of qbNums) {
+    if (!appNums.has(num)) onlyQb.push({ number: num, ...meta });
+  }
+  onlyApp.sort((a, b) => a.number - b.number);
+  onlyQb.sort((a, b) => a.number - b.number);
+  inBoth.sort((a, b) => a - b);
+
+  // Gaps across the COMBINED set (numbers used by neither, within the overall range).
+  const all = [...appNums.keys(), ...qbNums.keys()];
+  const min = all.length ? Math.min(...all) : null;
+  const max = all.length ? Math.max(...all) : null;
+  const used = new Set(all);
+  const gaps = [];
+  if (min != null && max != null && max - min < 100000) {
+    for (let n = min; n <= max; n++) if (!used.has(n)) gaps.push(n);
+  }
+
+  res.json({
+    appCount: appNums.size,
+    qbCount: qbNums.size,
+    inBothCount: inBoth.length,
+    onlyAppCount: onlyApp.length,
+    onlyQbCount: onlyQb.length,
+    onlyApp: onlyApp.slice(0, 1000),
+    onlyQb: onlyQb.slice(0, 1000),
+    range: { min, max },
+    gapCount: gaps.length,
+    gaps: gaps.slice(0, 1000),
+  });
+});
+
 // GET /api/orders/invoice-offset — the current offset (invoice # = id + offset).
 router.get('/invoice-offset', (req, res) => {
   res.json({ offset: db.getInvoiceOffset() });
