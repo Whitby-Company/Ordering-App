@@ -459,15 +459,19 @@ router.post('/invoice-reconcile', (req, res) => {
 
   const inBoth = [], onlyApp = [], onlyQb = [];
   for (const [num, customer] of appNums) {
-    if (qbNums.has(num)) inBoth.push(num);
-    else onlyApp.push({ number: num, customer });
+    if (qbNums.has(num)) {
+      const meta = qbNums.get(num) || {};
+      inBoth.push({ number: num, ...meta }); // QB details (customer, date, total)
+    } else {
+      onlyApp.push({ number: num, customer });
+    }
   }
   for (const [num, meta] of qbNums) {
     if (!appNums.has(num)) onlyQb.push({ number: num, ...meta });
   }
   onlyApp.sort((a, b) => a.number - b.number);
   onlyQb.sort((a, b) => a.number - b.number);
-  inBoth.sort((a, b) => a - b);
+  inBoth.sort((a, b) => a.number - b.number);
 
   // Gaps across the COMBINED set (numbers used by neither, within the overall range).
   const all = [...appNums.keys(), ...qbNums.keys()];
@@ -483,6 +487,7 @@ router.post('/invoice-reconcile', (req, res) => {
     appCount: appNums.size,
     qbCount: qbNums.size,
     inBothCount: inBoth.length,
+    inBoth: inBoth.slice(0, 2000),
     onlyAppCount: onlyApp.length,
     onlyQbCount: onlyQb.length,
     onlyApp: onlyApp.slice(0, 1000),
