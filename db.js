@@ -300,6 +300,11 @@ db.exec(`CREATE TABLE IF NOT EXISTS po_lines (
   qty_ordered INTEGER NOT NULL DEFAULT 0,
   qty_received INTEGER NOT NULL DEFAULT 0
 )`);
+// Track short/damaged quantity when a PO is closed short (rest never arrived).
+{
+  const poLineCols = db.prepare('PRAGMA table_info(po_lines)').all().map(c => c.name);
+  if (!poLineCols.includes('qty_short')) db.exec('ALTER TABLE po_lines ADD COLUMN qty_short INTEGER NOT NULL DEFAULT 0');
+}
 
 db.exec(`CREATE TABLE IF NOT EXISTS customer_catalog (
   customer_id INTEGER NOT NULL,

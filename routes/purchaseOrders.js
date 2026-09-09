@@ -11,7 +11,7 @@ function getPO(id) {
   if (!po) return null;
   po.lines = db.prepare(
     `SELECT pl.id, pl.item_id AS itemId, i.name AS item, i.brand,
-            pl.qty_ordered AS qtyOrdered, pl.qty_received AS qtyReceived
+            pl.qty_ordered AS qtyOrdered, pl.qty_received AS qtyReceived, pl.qty_short AS qtyShort
        FROM po_lines pl LEFT JOIN items i ON i.id = pl.item_id
       WHERE pl.po_id = ? ORDER BY pl.id`
   ).all(id);
@@ -163,6 +163,28 @@ router.post('/:id/receive', (req, res) => {
   tx();
   refreshStatus(id);
   res.json({ ok: true, received, po: getPO(id) });
+});
+
+// POST /api/purchase-orders/:id/close-short — mark the PO done, recording the
+// still-outstanding quantity per line as short/damaged (it never arrived).
+router.post('/:id/close-short', (req, res) => {
+  const id = Number(req.params.id);
+  const po = db.prepare('SELECT id, status FROM purchase_orders WHERE id = ?').get(id);
+  if (!po) return res.status(404).json({ error: 'Purchase order not found' });
+  if (po.status === 'cancelled') return res.status(400).json({ error: 'PO is cancelled' });
+  const lines = db.prepare('SELECT id, qty_ordered, qty_received, qty_short FROM po_lines WHERE po_id = ?').all(id);
+  const setShort = db.prepare('UPDATE po_lines SET qty_short = ? WHERE id = ?');
+  let totalShort = 0;
+  const tx = db.transaction(() => {
+    for (const l of lines) {
+      const short = l.qty_ordered - l.qty_received - (l.qty_short || 0);
+      if (short > 0) { setShort.run((l.qty_short || 0) + short, l.id); totalShort += short; }
+    }
+    // Closed short = considered received/complete (no more expected).
+    db.prepare("UPDATE purchase_orders SET status = 'received' WHERE id = ?").run(id);
+  });
+  tx();
+  res.json({ ok: true, totalShort, po: getPO(id) });
 });
 
 module.exports = router;
