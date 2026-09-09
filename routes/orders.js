@@ -239,6 +239,8 @@ router.post('/', (req, res) => {
     let price;
     if (cat && cat.price != null) price = cat.price;
     else price = unit === 'case' ? (item.case_price != null ? item.case_price : item.price) : item.price;
+    // Out-of-stock items are ordered at $0 (no stock to fulfill/charge for).
+    if ((Number(item.stock) || 0) <= 0) price = 0;
     // Stock is tracked in eaches at the box level; qty of this unit uses `pack` eaches.
     resolvedLines.push({ item, qty, unit, pack, price });
   }
@@ -263,7 +265,8 @@ router.post('/', (req, res) => {
     for (const { item, qty, unit, pack, price } of resolvedLines) {
       insertLine.run(orderId, item.id, qty, price, unit, pack);
       // Stock is counted in boxes; a case order consumes qty * case_size boxes.
-      if (!isPending) {
+      // Out-of-stock items ($0) leave stock at 0 — don't drive it negative.
+      if (!isPending && (Number(item.stock) || 0) > 0) {
         const boxes = qty * (unit === 'case' ? (item.case_size || 1) : 1);
         decrementStock.run(boxes, item.id);
       }
