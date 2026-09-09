@@ -842,12 +842,15 @@ router.get('/sales-by-person', (req, res) => {
       GROUP BY o.id`
   ).all(...params);
 
+  const SALES_TAX_RATE = 0.005; // 0.5% — matches the invoice grand total
   const byPerson = new Map();
   for (const r of rows) {
     if (!byPerson.has(r.person)) byPerson.set(r.person, { person: r.person, orders: 0, dollars: 0 });
     const p = byPerson.get(r.person);
+    const sub = r.dollars || 0;
+    const withTax = sub + Math.round(sub * SALES_TAX_RATE * 100) / 100; // tax rounded per order
     p.orders += 1;
-    p.dollars += r.dollars || 0;
+    p.dollars += withTax;
   }
   const people = [...byPerson.values()]
     .map(p => ({ ...p, dollars: Math.round(p.dollars * 100) / 100 }))
