@@ -373,7 +373,7 @@ router.patch('/:id', (req, res) => {
   const adjustStock = db.prepare('UPDATE items SET stock = stock + ? WHERE id = ?');
   const deleteLines = db.prepare('DELETE FROM order_lines WHERE order_id = ?');
   const insertLine = db.prepare('INSERT INTO order_lines (order_id, item_id, qty, price) VALUES (?, ?, ?, ?)');
-  const updateOrder = db.prepare('UPDATE orders SET customer_id = ?, delivery_date = ?, notes = ?, edited_at = ? WHERE id = ?');
+  const updateOrder = db.prepare('UPDATE orders SET customer_id = ?, delivery_date = ?, notes = ?, edited_at = ?, processed = 0, processed_at = NULL WHERE id = ?');
   const custPriceStmt = db.prepare('SELECT price FROM customer_catalog WHERE customer_id = ? AND item_id = ?');
   const priceFor = (item) => { const r = custPriceStmt.get(customerId, item.id); return (r && r.price != null) ? r.price : item.price; };
 
