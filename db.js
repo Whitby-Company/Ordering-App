@@ -234,6 +234,14 @@ if (!orderColumns.includes('status')) {
   db.exec("ALTER TABLE orders ADD COLUMN status TEXT DEFAULT 'submitted'");
   db.exec("UPDATE orders SET status = 'submitted' WHERE status IS NULL");
 }
+// When the order was last edited after creation (blank = never edited).
+if (!orderColumns.includes('edited_at')) {
+  db.exec('ALTER TABLE orders ADD COLUMN edited_at TEXT');
+}
+// A manually-set custom status label (e.g. "invoiced", "shipped", "on hold").
+if (!orderColumns.includes('custom_status')) {
+  db.exec('ALTER TABLE orders ADD COLUMN custom_status TEXT');
+}
 // Custom PO number override for the order (blank = use the auto MMDDYY-abbrev).
 if (!orderColumns.includes('po_number')) {
   db.exec('ALTER TABLE orders ADD COLUMN po_number TEXT');

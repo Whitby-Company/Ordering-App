@@ -10,7 +10,7 @@ router.get('/', (req, res) => {
   const orders = db
     .prepare(
       `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
-              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport,
+              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport, o.edited_at as editedAt, o.custom_status as customStatus,
               c.id as customerId, c.name as customer
        FROM orders o
        JOIN customers c ON c.id = o.customer_id
@@ -43,7 +43,7 @@ function fetchOrdersForIIF(ids) {
   );
   const orderStmt = db.prepare(
     `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
-              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport,
+              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport, o.edited_at as editedAt, o.custom_status as customStatus,
             c.name as customer, c.abbreviation as abbreviation, c.short_name as shortName,
             c.shipto_line1 as shipToLine1, c.shipto_line2 as shipToLine2, c.shipto_city as shipToCity,
             c.shipto_state as shipToState, c.shipto_zip as shipToZip, c.shipto_phone as shipToPhone
@@ -162,7 +162,7 @@ router.patch('/:id/processed', (req, res) => {
 
   const updated = db.prepare(
     `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
-            o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport,
+            o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport, o.edited_at as editedAt, o.custom_status as customStatus,
             c.id as customerId, c.name as customer
      FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = ?`
   ).get(id);
@@ -194,7 +194,7 @@ router.patch('/:id/submit', (req, res) => {
 
   const updated = db.prepare(
     `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
-            o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport,
+            o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport, o.edited_at as editedAt, o.custom_status as customStatus,
             c.id as customerId, c.name as customer
      FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = ?`
   ).get(id);
@@ -286,6 +286,17 @@ router.post('/', (req, res) => {
   });
 });
 
+// PATCH /api/orders/:id/custom-status — set a manual status label (or clear it).
+router.patch('/:id/custom-status', (req, res) => {
+  const orderId = Number(req.params.id);
+  const order = db.prepare('SELECT id FROM orders WHERE id = ?').get(orderId);
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+  const raw = req.body ? req.body.status : undefined;
+  const value = (typeof raw === 'string' && raw.trim()) ? raw.trim().slice(0, 40) : null;
+  db.prepare('UPDATE orders SET custom_status = ? WHERE id = ?').run(value, orderId);
+  res.json({ ok: true, id: orderId, customStatus: value });
+});
+
 // PATCH /api/orders/:id/invoice-number — set (or clear) an order's explicit
 // invoice number, to line it up with QuickBooks. Body: { invoiceNumber } (a
 // number, or null/'' to revert to the automatic id+offset number).
@@ -362,7 +373,7 @@ router.patch('/:id', (req, res) => {
   const adjustStock = db.prepare('UPDATE items SET stock = stock + ? WHERE id = ?');
   const deleteLines = db.prepare('DELETE FROM order_lines WHERE order_id = ?');
   const insertLine = db.prepare('INSERT INTO order_lines (order_id, item_id, qty, price) VALUES (?, ?, ?, ?)');
-  const updateOrder = db.prepare('UPDATE orders SET customer_id = ?, delivery_date = ?, notes = ? WHERE id = ?');
+  const updateOrder = db.prepare('UPDATE orders SET customer_id = ?, delivery_date = ?, notes = ?, edited_at = ? WHERE id = ?');
   const custPriceStmt = db.prepare('SELECT price FROM customer_catalog WHERE customer_id = ? AND item_id = ?');
   const priceFor = (item) => { const r = custPriceStmt.get(customerId, item.id); return (r && r.price != null) ? r.price : item.price; };
 
@@ -379,13 +390,13 @@ router.patch('/:id', (req, res) => {
     }
     deleteLines.run(orderId);
     for (const { item, qty } of resolvedLines) insertLine.run(orderId, item.id, qty, priceFor(item));
-    updateOrder.run(customerId, deliveryDate, cleanNotes, orderId);
+    updateOrder.run(customerId, deliveryDate, cleanNotes, new Date().toISOString(), orderId);
   });
   run();
 
   const updated = db.prepare(
     `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
-              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport,
+              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport, o.edited_at as editedAt, o.custom_status as customStatus,
             c.id as customerId, c.name as customer
      FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = ?`
   ).get(orderId);
