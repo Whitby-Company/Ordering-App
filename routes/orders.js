@@ -435,6 +435,43 @@ router.delete('/:id', (req, res) => {
   res.json({ id: Number(orderId), deleted: true });
 });
 
+// GET /api/orders/reconcile-export — CSV of every submitted order's line items
+// (invoice #, customer, date, item, qty, price, line total) for reconciling
+// against a QuickBooks invoice export.
+router.get('/reconcile-export', (req, res) => {
+  const offset = db.getInvoiceOffset();
+  const rows = db.prepare(
+    `SELECT o.id AS orderId, o.invoice_number AS invoiceNumber, o.submitted_at AS submittedAt,
+            o.delivery_date AS deliveryDate, c.name AS customer,
+            ol.item_id AS itemId, i.name AS itemName, ol.qty, ol.unit, ol.pack, ol.price
+       FROM orders o
+       LEFT JOIN customers c ON c.id = o.customer_id
+       LEFT JOIN order_lines ol ON ol.order_id = o.id
+       LEFT JOIN items i ON i.id = ol.item_id
+      WHERE o.status = 'submitted'
+      ORDER BY o.id, ol.id`
+  ).all();
+  const esc = v => {
+    const s = v == null ? '' : String(v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const header = ['Invoice #', 'Order ID', 'Customer', 'Submitted', 'Delivery', 'Item #', 'Item', 'Qty', 'Unit', 'Pack', 'Price/ea', 'Line total'];
+  const lines = [header.join(',')];
+  for (const r of rows) {
+    const inv = (r.invoiceNumber != null && r.invoiceNumber !== '') ? r.invoiceNumber : (r.orderId + offset);
+    const eaches = (Number(r.qty) || 0) * (Number(r.pack) || 1);
+    const lineTotal = eaches * (Number(r.price) || 0);
+    lines.push([
+      inv, r.orderId, r.customer || '', (r.submittedAt || '').slice(0, 10), r.deliveryDate || '',
+      r.itemId ? r.itemId.split(':').pop() : '', r.itemName || '', r.qty || 0, r.unit || 'box',
+      r.pack || '', (Number(r.price) || 0).toFixed(2), lineTotal.toFixed(2),
+    ].map(esc).join(','));
+  }
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="app-orders-for-reconcile.csv"');
+  res.send(lines.join('\n'));
+});
+
 // GET /api/orders/invoice-audit — check invoice-number integrity for submitted
 // orders: the sequence range, any gaps (missing numbers), and any duplicates.
 // Invoice # = explicit invoice_number if set, else order id + offset.
