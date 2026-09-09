@@ -73,8 +73,8 @@ router.post('/', (req, res) => {
 // (Stock corrections here are for fixing mistakes — normal stock changes
 // should happen via orders.)
 router.patch('/:id', (req, res) => {
-  const { stock, name, brand, pack, packLabel, imageUrl, upc, price, active, contains, isDefault, cost, notes, changedBy, reason } = req.body;
-  if (stock === undefined && name === undefined && brand === undefined && pack === undefined && packLabel === undefined && imageUrl === undefined && upc === undefined && price === undefined && active === undefined && contains === undefined && isDefault === undefined && cost === undefined && notes === undefined) {
+  const { stock, name, brand, pack, packLabel, imageUrl, upc, price, active, contains, isDefault, cost, notes, caseSize, changedBy, reason } = req.body;
+  if (stock === undefined && name === undefined && brand === undefined && pack === undefined && packLabel === undefined && imageUrl === undefined && upc === undefined && price === undefined && active === undefined && contains === undefined && isDefault === undefined && cost === undefined && notes === undefined && caseSize === undefined) {
     return res.status(400).json({ error: 'At least one field must be provided' });
   }
   if (stock !== undefined && Number.isNaN(Number(stock))) {
@@ -102,6 +102,7 @@ router.patch('/:id', (req, res) => {
   if (name !== undefined) { updates.push('name = ?'); params.push(name.trim()); }
   if (brand !== undefined) { updates.push('brand = ?'); params.push(brand.trim()); }
   if (pack !== undefined) { updates.push('pack = ?'); params.push(Number(pack)); }
+  if (caseSize !== undefined) { updates.push('case_size = ?'); params.push(caseSize == null || caseSize === '' ? null : Number(caseSize)); }
   if (packLabel !== undefined) { updates.push('packLabel = ?'); params.push(packLabel.trim() || null); }
   if (imageUrl !== undefined) { updates.push('imageUrl = ?'); params.push(imageUrl.trim() || null); }
   if (upc !== undefined) { updates.push('upc = ?'); params.push((upc == null ? '' : String(upc)).trim() || null); }

@@ -821,6 +821,42 @@ router.get('/sales-by-month', (req, res) => {
   res.json({ from, to, months, itemCount: items.length, items });
 });
 
+// GET /api/orders/sales-by-person?from=YYYY-MM-DD&to=YYYY-MM-DD
+// Total submitted-order dollars grouped by who submitted them. Optional date
+// range (by submitted date); omit for all time.
+router.get('/sales-by-person', (req, res) => {
+  const from = /^\d{4}-\d{2}-\d{2}$/.test(req.query.from || '') ? req.query.from : null;
+  const to = /^\d{4}-\d{2}-\d{2}$/.test(req.query.to || '') ? req.query.to : null;
+  const clauses = ["o.status = 'submitted'"];
+  const params = [];
+  if (from) { clauses.push('substr(o.submitted_at, 1, 10) >= ?'); params.push(from); }
+  if (to) { clauses.push('substr(o.submitted_at, 1, 10) <= ?'); params.push(to); }
+  const rows = db.prepare(
+    `SELECT COALESCE(NULLIF(TRIM(o.submitted_by), ''), '(unknown)') AS person,
+            o.id AS orderId,
+            SUM(ol.qty * COALESCE(ol.pack, i.pack, 1) * COALESCE(ol.price, i.price, 0)) AS dollars
+       FROM orders o
+       LEFT JOIN order_lines ol ON ol.order_id = o.id
+       LEFT JOIN items i ON i.id = ol.item_id
+      WHERE ${clauses.join(' AND ')}
+      GROUP BY o.id`
+  ).all(...params);
+
+  const byPerson = new Map();
+  for (const r of rows) {
+    if (!byPerson.has(r.person)) byPerson.set(r.person, { person: r.person, orders: 0, dollars: 0 });
+    const p = byPerson.get(r.person);
+    p.orders += 1;
+    p.dollars += r.dollars || 0;
+  }
+  const people = [...byPerson.values()]
+    .map(p => ({ ...p, dollars: Math.round(p.dollars * 100) / 100 }))
+    .sort((a, b) => b.dollars - a.dollars);
+  const grandTotal = Math.round(people.reduce((s, p) => s + p.dollars, 0) * 100) / 100;
+  const totalOrders = people.reduce((s, p) => s + p.orders, 0);
+  res.json({ from, to, people, grandTotal, totalOrders });
+});
+
 // GET /api/orders/margin-report?from=YYYY-MM&to=YYYY-MM
 // Per customer + item: units, sell $, cost $ (landed), margin $ and % over a
 // delivery-date range. Cost = item.cost (landed w/Taiyo) per each.
