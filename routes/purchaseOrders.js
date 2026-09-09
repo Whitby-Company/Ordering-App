@@ -41,7 +41,17 @@ router.get('/', (req, res) => {
   sql += ' ORDER BY COALESCE(expected_date, order_date, created_at) DESC, id DESC';
   const pos = db.prepare(sql).all(...params).map(po => {
     const agg = db.prepare('SELECT COUNT(*) items, COALESCE(SUM(qty_ordered),0) ordered, COALESCE(SUM(qty_received),0) received FROM po_lines WHERE po_id = ?').get(po.id);
-    return { ...po, itemCount: agg.items, totalOrdered: agg.ordered, totalReceived: agg.received };
+    // Case totals: boxes / case_size for items that have one (rounded to 1 decimal).
+    const cagg = db.prepare(
+      `SELECT COALESCE(SUM(CASE WHEN i.case_size > 0 THEN CAST(pl.qty_ordered AS REAL) / i.case_size ELSE 0 END), 0) AS orderedCases,
+              COALESCE(SUM(CASE WHEN i.case_size > 0 THEN CAST(pl.qty_received AS REAL) / i.case_size ELSE 0 END), 0) AS receivedCases
+         FROM po_lines pl LEFT JOIN items i ON i.id = pl.item_id WHERE pl.po_id = ?`
+    ).get(po.id);
+    return {
+      ...po, itemCount: agg.items, totalOrdered: agg.ordered, totalReceived: agg.received,
+      totalOrderedCases: Math.round(cagg.orderedCases * 10) / 10,
+      totalReceivedCases: Math.round(cagg.receivedCases * 10) / 10,
+    };
   });
   res.json(pos);
 });
