@@ -503,6 +503,78 @@ router.post('/backfill-prices', (req, res) => {
   res.json({ ok: true, fixed, stillZero, scanned: rows.length });
 });
 
+// POST /api/orders/inventory-redo — recompute each item's current stock from a
+// KNOWN starting count as of {startDate}, plus/minus everything since:
+//   correct = start(as of startDate) − boxes consumed by orders after startDate
+//             + boxes received/adjusted-up in the stock log after startDate.
+// Body: { startDate: 'YYYY-MM-DD', starting: { '<full item id>': <boxes>, ... },
+//         preview: true|false }. Preview computes without changing stock.
+// Orders are counted by DELIVERY date > startDate (what physically shipped after
+// the count). PO receipts / manual bumps use the stock_log after startDate.
+router.post('/inventory-redo', (req, res) => {
+  const b = req.body || {};
+  const startDate = /^\d{4}-\d{2}-\d{2}$/.test(b.startDate || '') ? b.startDate : null;
+  const starting = (b.starting && typeof b.starting === 'object') ? b.starting : null;
+  const dryRun = !!b.preview;
+  if (!startDate) return res.status(400).json({ error: 'Provide startDate (YYYY-MM-DD)' });
+  if (!starting) return res.status(400).json({ error: 'Provide starting = { itemId: boxes }' });
+
+  // 1. Boxes consumed by orders delivered AFTER the start date (submitted only).
+  const consumed = {};
+  const orderLines = db.prepare(
+    `SELECT ol.item_id AS itemId, ol.qty, ol.unit, i.case_size AS caseSize
+       FROM order_lines ol
+       JOIN orders o ON o.id = ol.order_id
+       LEFT JOIN items i ON i.id = ol.item_id
+      WHERE o.status = 'submitted' AND o.delivery_date > ?`
+  ).all(startDate);
+  for (const l of orderLines) {
+    const cs = Number(l.caseSize) > 0 ? Number(l.caseSize) : 1;
+    const boxes = (Number(l.qty) || 0) * (l.unit === 'case' ? cs : 1);
+    consumed[l.itemId] = (consumed[l.itemId] || 0) + boxes;
+  }
+  // 2. Positive stock-log changes AFTER the start date (PO receipts + manual adds).
+  const received = {};
+  const logs = db.prepare(
+    `SELECT item_id AS itemId, delta FROM stock_log
+      WHERE delta > 0 AND substr(changed_at, 1, 10) > ?`
+  ).all(startDate);
+  for (const l of logs) received[l.itemId] = (received[l.itemId] || 0) + l.delta;
+
+  // 3. For every item, correct = start − consumed + received. Compare to current.
+  const items = db.prepare('SELECT id, name, stock FROM items').all();
+  const setStock = db.prepare('UPDATE items SET stock = ? WHERE id = ?');
+  const logChange = db.prepare(
+    `INSERT INTO stock_log (item_id, old_stock, new_stock, delta, changed_by, reason, changed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  );
+  const rows = [];
+  let changed = 0;
+  const now = new Date().toISOString();
+  const tx = db.transaction(() => {
+    for (const it of items) {
+      // Only recompute items given a starting count (skip ones not in the file).
+      if (!(it.id in starting)) continue;
+      const start = Number(starting[it.id]) || 0;
+      const out = consumed[it.id] || 0;
+      const inn = received[it.id] || 0;
+      const correct = Math.round((start - out + inn) * 100) / 100;
+      const cur = Number(it.stock) || 0;
+      if (Math.abs(correct - cur) >= 0.001) {
+        rows.push({ id: it.id, name: it.name, start, consumed: out, received: inn, correct, current: cur, diff: Math.round((correct - cur) * 100) / 100 });
+        if (!dryRun) {
+          setStock.run(correct, it.id);
+          logChange.run(it.id, cur, correct, correct - cur, 'Inventory redo', `Redo from ${startDate} count`, now);
+          changed++;
+        }
+      }
+    }
+  });
+  tx();
+  rows.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+  res.json({ preview: dryRun, startDate, itemsInStarting: Object.keys(starting).length, wouldChange: rows.length, changed: dryRun ? 0 : changed, rows: rows.slice(0, 2000) });
+});
+
 router.post('/backfill-packs', (req, res) => {
   const rows = db.prepare(
     `SELECT ol.id, ol.unit, i.pack AS itemPack, i.case_size AS itemCaseSize
