@@ -353,22 +353,23 @@ router.patch('/:id', (req, res) => {
   const customer = db.prepare('SELECT id, name FROM customers WHERE id = ?').get(customerId);
   if (!customer) return res.status(404).json({ error: 'Customer not found' });
 
-  const oldLines = db.prepare('SELECT item_id, qty FROM order_lines WHERE order_id = ?').all(orderId);
-  const oldQtyByItem = {};
-  for (const l of oldLines) oldQtyByItem[l.item_id] = l.qty;
+  const oldLines = db.prepare('SELECT item_id, qty, unit FROM order_lines WHERE order_id = ?').all(orderId);
+  const oldBoxesByItem = {};
+  for (const l of oldLines) {
+    const it = db.prepare('SELECT case_size FROM items WHERE id = ?').get(l.item_id);
+    const cs = it && it.case_size ? it.case_size : 1;
+    oldBoxesByItem[l.item_id] = (oldBoxesByItem[l.item_id] || 0) + l.qty * (l.unit === 'case' ? cs : 1);
+  }
 
   const getItem = db.prepare('SELECT id, name, brand, stock, price, pack, case_size, case_price FROM items WHERE id = ?');
   const custUnitStmt = db.prepare('SELECT unit, price FROM customer_catalog WHERE customer_id = ? AND item_id = ?');
-  const newQtyByItem = {};
+  const newBoxesByItem = {};
   const resolvedLines = [];
   for (const line of lines) {
     const item = getItem.get(line.itemId);
     if (!item) return res.status(404).json({ error: `Item "${line.itemId}" not found` });
     const qty = Number(line.qty);
-    // qty 0 is allowed (see POST) — an item on the order with no quantity, e.g.
-    // to print its UPC for check-in. Reject negatives / non-numbers only.
     if (!Number.isFinite(qty) || qty < 0) return res.status(400).json({ error: `Invalid quantity for "${item.name}"` });
-    newQtyByItem[line.itemId] = qty;
     // Resolve unit/pack/price the same way as order create, so editing keeps
     // case units and the displayed price instead of reverting to box.
     const cat = custUnitStmt.get(customerId, item.id);
@@ -380,6 +381,9 @@ router.patch('/:id', (req, res) => {
     else if (cat && cat.price != null) price = cat.price;
     else price = unit === 'case' ? (item.case_price != null ? item.case_price : item.price) : item.price;
     if ((Number(item.stock) || 0) <= 0) price = 0;
+    // Stock is in boxes; a case line consumes qty × case_size boxes.
+    const boxes = qty * (unit === 'case' ? (item.case_size || 1) : 1);
+    newBoxesByItem[line.itemId] = (newBoxesByItem[line.itemId] || 0) + boxes;
     resolvedLines.push({ item, qty, unit, pack, price });
   }
 
@@ -397,11 +401,11 @@ router.patch('/:id', (req, res) => {
   const cleanNotes = (typeof notes === 'string' && notes.trim()) ? notes.trim() : null;
   const run = db.transaction(() => {
     if (!isPending) {
-      const touchedItems = new Set([...Object.keys(oldQtyByItem), ...Object.keys(newQtyByItem)]);
+      const touchedItems = new Set([...Object.keys(oldBoxesByItem), ...Object.keys(newBoxesByItem)]);
       for (const itemId of touchedItems) {
-        const oldQty = oldQtyByItem[itemId] || 0;
-        const newQty = newQtyByItem[itemId] || 0;
-        const delta = oldQty - newQty; // positive = return stock, negative = consume more
+        const oldBoxes = oldBoxesByItem[itemId] || 0;
+        const newBoxes = newBoxesByItem[itemId] || 0;
+        const delta = oldBoxes - newBoxes; // positive = return stock, negative = consume more
         if (delta !== 0) adjustStock.run(delta, itemId);
       }
     }
