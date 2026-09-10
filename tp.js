@@ -130,10 +130,15 @@ function buildTP(orders, brandAbbrev = {}, invoiceOffset = 0) {
     if (brands.length > 1) prefix = 'Asst';
     else if (brands.length === 1) prefix = brandAbbrev[brands[0]] || brands[0];
 
+    // Memo: "<prefix> <shortName> PO# <po>". If the customer has no short name,
+    // still build it from the prefix (brand/Asst) and PO# so the memo is never
+    // blank — e.g. "Asst PO# 090926-DQK1" or "RS PO# 12345".
     let memo = '';
+    const poSuffix = poForMemo ? ` ${poForMemo}` : '';
     if (shortName) {
-      const poSuffix = poForMemo ? ` ${poForMemo}` : '';
       memo = `${prefix ? prefix + ' ' : ''}${shortName}${poSuffix}`;
+    } else {
+      memo = `${prefix || ''}${poSuffix}`.trim();
     }
 
     // Whole-order totals (positive lines only — backorders add nothing).
