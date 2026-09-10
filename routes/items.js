@@ -435,6 +435,36 @@ router.get('/export-inventory', (req, res) => {
   res.send(lines.join('\n'));
 });
 
+// GET /api/items/:id/stock-check — reconcile an item's stock: current stored
+// stock vs. correct box consumption from all its orders + logged additions.
+router.get('/:id/stock-check', (req, res) => {
+  const itemId = req.params.id;
+  const item = db.prepare('SELECT id, name, stock, pack, case_size AS caseSize FROM items WHERE id = ?').get(itemId);
+  if (!item) return res.status(404).json({ error: 'Item not found' });
+  const cs = Number(item.caseSize) > 0 ? Number(item.caseSize) : 1;
+  const lines = db.prepare(
+    `SELECT o.id AS orderId, o.delivery_date AS deliveryDate, c.name AS customer, ol.qty, ol.unit
+       FROM order_lines ol JOIN orders o ON o.id = ol.order_id
+       LEFT JOIN customers c ON c.id = o.customer_id
+      WHERE ol.item_id = ? AND o.status = 'submitted' ORDER BY o.id`
+  ).all(itemId);
+  let totalBoxesConsumed = 0;
+  const orders = lines.map(l => {
+    const boxes = (Number(l.qty) || 0) * (l.unit === 'case' ? cs : 1);
+    totalBoxesConsumed += boxes;
+    return { orderId: l.orderId, customer: l.customer, qty: l.qty, unit: l.unit, boxesConsumed: boxes };
+  });
+  const logs = db.prepare(
+    `SELECT old_stock AS oldStock, new_stock AS newStock, delta, reason, changed_at AS changedAt
+       FROM stock_log WHERE item_id = ? ORDER BY id`
+  ).all(itemId);
+  const totalLoggedAdded = logs.reduce((s, l) => s + (l.delta > 0 ? l.delta : 0), 0);
+  res.json({
+    itemId, name: item.name, currentStock: item.stock, pack: item.pack, caseSize: item.caseSize || null,
+    totalBoxesConsumed, orderCount: orders.length, orders, loggedChanges: logs, totalLoggedAdded,
+  });
+});
+
 // GET /api/items/export-stock-log — the FULL stock change history (no limit),
 // oldest first, so stock can be reconstructed/audited.
 router.get('/export-stock-log', (req, res) => {
