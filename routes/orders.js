@@ -456,6 +456,53 @@ router.delete('/:id', (req, res) => {
 // POST /api/orders/backfill-packs — fill in order_lines.pack where it's NULL/0,
 // using the item's pack (× case_size for case lines). Fixes old lines that were
 // saved without a pack so their totals compute correctly everywhere.
+// POST /api/orders/backfill-prices — fill in order_lines.price where it's 0/NULL,
+// using the customer's catalog price for that item if set, else the item's base
+// price (case_price for case lines). Fixes old orders saved with $0 prices.
+// Body: { orderId } to limit to one order, or omit for ALL submitted orders.
+router.post('/backfill-prices', (req, res) => {
+  const onlyOrder = req.body && req.body.orderId ? Number(req.body.orderId) : null;
+  const dryRun = !!(req.body && req.body.preview);
+  const where = onlyOrder ? 'AND o.id = ?' : '';
+  const rows = db.prepare(
+    `SELECT ol.id, ol.item_id, ol.unit, ol.price, ol.qty, ol.pack, o.id AS orderId, o.customer_id AS customerId,
+            i.name AS itemName, i.price AS itemPrice, i.case_price AS itemCasePrice
+       FROM order_lines ol
+       JOIN orders o ON o.id = ol.order_id
+       LEFT JOIN items i ON i.id = ol.item_id
+      WHERE o.status = 'submitted' AND (ol.price IS NULL OR ol.price = 0) ${where}`
+  ).all(...(onlyOrder ? [onlyOrder] : []));
+  const catStmt = db.prepare('SELECT price FROM customer_catalog WHERE customer_id = ? AND item_id = ?');
+  const upd = db.prepare('UPDATE order_lines SET price = ? WHERE id = ?');
+  let fixed = 0, stillZero = 0;
+  const sample = [];
+  const resolve = (r) => {
+    const cat = catStmt.get(r.customerId, r.item_id);
+    let price = (cat && cat.price != null) ? cat.price
+      : (r.unit === 'case' ? (r.itemCasePrice != null ? r.itemCasePrice : r.itemPrice) : r.itemPrice);
+    return Number(price) || 0;
+  };
+  if (dryRun) {
+    const byOrder = {};
+    for (const r of rows) {
+      const price = resolve(r);
+      if (price > 0) fixed++; else stillZero++;
+      byOrder[r.orderId] = byOrder[r.orderId] || { orderId: r.orderId, lines: 0, newTotal: 0 };
+      byOrder[r.orderId].lines++;
+      byOrder[r.orderId].newTotal += price * (Number(r.qty) || 0) * (Number(r.pack) || 1);
+    }
+    return res.json({ preview: true, scanned: rows.length, wouldFix: fixed, stillZero, orders: Object.values(byOrder).map(o => ({ ...o, newTotal: Math.round(o.newTotal * 100) / 100 })) });
+  }
+  const tx = db.transaction(() => {
+    for (const r of rows) {
+      const price = resolve(r);
+      if (price > 0) { upd.run(price, r.id); fixed++; } else { stillZero++; }
+    }
+  });
+  tx();
+  res.json({ ok: true, fixed, stillZero, scanned: rows.length });
+});
+
 router.post('/backfill-packs', (req, res) => {
   const rows = db.prepare(
     `SELECT ol.id, ol.unit, i.pack AS itemPack, i.case_size AS itemCaseSize
