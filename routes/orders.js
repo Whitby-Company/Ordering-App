@@ -453,6 +453,29 @@ router.delete('/:id', (req, res) => {
   res.json({ id: Number(orderId), deleted: true });
 });
 
+// POST /api/orders/backfill-packs — fill in order_lines.pack where it's NULL/0,
+// using the item's pack (× case_size for case lines). Fixes old lines that were
+// saved without a pack so their totals compute correctly everywhere.
+router.post('/backfill-packs', (req, res) => {
+  const rows = db.prepare(
+    `SELECT ol.id, ol.unit, i.pack AS itemPack, i.case_size AS itemCaseSize
+       FROM order_lines ol JOIN items i ON i.id = ol.item_id
+      WHERE ol.pack IS NULL OR ol.pack = 0`
+  ).all();
+  const upd = db.prepare('UPDATE order_lines SET pack = ? WHERE id = ?');
+  let fixed = 0;
+  const tx = db.transaction(() => {
+    for (const r of rows) {
+      const ip = Number(r.itemPack) || 1;
+      const cs = Number(r.itemCaseSize) || 1;
+      const pack = r.unit === 'case' ? ip * cs : ip;
+      if (pack > 0) { upd.run(pack, r.id); fixed++; }
+    }
+  });
+  tx();
+  res.json({ ok: true, fixed, scanned: rows.length });
+});
+
 // GET /api/orders/reconcile-export — CSV of every submitted order's line items
 // (invoice #, customer, date, item, qty, price, line total) for reconciling
 // against a QuickBooks invoice export.
@@ -461,7 +484,8 @@ router.get('/reconcile-export', (req, res) => {
   const rows = db.prepare(
     `SELECT o.id AS orderId, o.invoice_number AS invoiceNumber, o.submitted_at AS submittedAt,
             o.delivery_date AS deliveryDate, o.po_number AS poNumber, c.name AS customer,
-            ol.item_id AS itemId, i.name AS itemName, ol.qty, ol.unit, ol.pack, ol.price
+            ol.item_id AS itemId, i.name AS itemName, ol.qty, ol.unit, ol.pack, ol.price,
+            i.pack AS itemPack, i.case_size AS itemCaseSize
        FROM orders o
        LEFT JOIN customers c ON c.id = o.customer_id
        LEFT JOIN order_lines ol ON ol.order_id = o.id
@@ -477,12 +501,20 @@ router.get('/reconcile-export', (req, res) => {
   const lines = [header.join(',')];
   for (const r of rows) {
     const inv = (r.invoiceNumber != null && r.invoiceNumber !== '') ? r.invoiceNumber : (r.orderId + offset);
-    const eaches = (Number(r.qty) || 0) * (Number(r.pack) || 1);
+    // Pack: use the snapshotted line pack; if missing, fall back to the item's
+    // pack (× case_size for a case line) so old lines with no pack still total right.
+    let pack = Number(r.pack) || 0;
+    if (pack <= 0) {
+      const ip = Number(r.itemPack) || 1;
+      const cs = Number(r.itemCaseSize) || 1;
+      pack = r.unit === 'case' ? ip * cs : ip;
+    }
+    const eaches = (Number(r.qty) || 0) * pack;
     const lineTotal = eaches * (Number(r.price) || 0);
     lines.push([
       inv, r.orderId, r.poNumber || '', r.customer || '', (r.submittedAt || '').slice(0, 10), r.deliveryDate || '',
       r.itemId ? r.itemId.split(':').pop() : '', r.itemName || '', r.qty || 0, r.unit || 'box',
-      r.pack || '', (Number(r.price) || 0).toFixed(2), lineTotal.toFixed(2),
+      pack || '', (Number(r.price) || 0).toFixed(2), lineTotal.toFixed(2),
     ].map(esc).join(','));
   }
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
