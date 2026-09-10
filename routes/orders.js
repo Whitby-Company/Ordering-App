@@ -933,7 +933,10 @@ router.post('/fix-duplicate-invoices', (req, res) => {
     if (Number.isFinite(n)) { if (!byNum.has(n)) byNum.set(n, []); byNum.get(n).push(o); if (n > maxNum) maxNum = n; }
   }
   const used = new Set([...byNum.keys()]);
-  let nextFree = maxNum + 1;
+  // Renumber duplicates starting from `startAt` (default 24000), skipping any
+  // number already in use, so the new numbers are in a clean low range.
+  const startAt = Number(req.body && req.body.startAt) || 24000;
+  let nextFree = startAt;
   const freeNumber = () => { while (used.has(nextFree)) nextFree++; used.add(nextFree); return nextFree; };
   const setInv = db.prepare('UPDATE orders SET invoice_number = ? WHERE id = ?');
   const plan = [];
