@@ -358,6 +358,7 @@ router.patch('/:id', (req, res) => {
   for (const l of oldLines) oldQtyByItem[l.item_id] = l.qty;
 
   const getItem = db.prepare('SELECT id, name, brand, stock, price, pack, case_size, case_price FROM items WHERE id = ?');
+  const custUnitStmt = db.prepare('SELECT unit, price FROM customer_catalog WHERE customer_id = ? AND item_id = ?');
   const newQtyByItem = {};
   const resolvedLines = [];
   for (const line of lines) {
@@ -368,7 +369,18 @@ router.patch('/:id', (req, res) => {
     // to print its UPC for check-in. Reject negatives / non-numbers only.
     if (!Number.isFinite(qty) || qty < 0) return res.status(400).json({ error: `Invalid quantity for "${item.name}"` });
     newQtyByItem[line.itemId] = qty;
-    resolvedLines.push({ item, qty });
+    // Resolve unit/pack/price the same way as order create, so editing keeps
+    // case units and the displayed price instead of reverting to box.
+    const cat = custUnitStmt.get(customerId, item.id);
+    let unit = (line.unit === 'case' || line.unit === 'box') ? line.unit : (cat && cat.unit ? cat.unit : 'box');
+    if (unit === 'case' && !item.case_size) unit = 'box';
+    const pack = unit === 'case' ? (item.pack * item.case_size) : item.pack;
+    let price;
+    if (line.price != null && Number.isFinite(Number(line.price))) price = Number(line.price);
+    else if (cat && cat.price != null) price = cat.price;
+    else price = unit === 'case' ? (item.case_price != null ? item.case_price : item.price) : item.price;
+    if ((Number(item.stock) || 0) <= 0) price = 0;
+    resolvedLines.push({ item, qty, unit, pack, price });
   }
 
   // Only items whose quantity is INCREASING need a stock check — the
@@ -379,10 +391,8 @@ router.patch('/:id', (req, res) => {
 
   const adjustStock = db.prepare('UPDATE items SET stock = stock + ? WHERE id = ?');
   const deleteLines = db.prepare('DELETE FROM order_lines WHERE order_id = ?');
-  const insertLine = db.prepare('INSERT INTO order_lines (order_id, item_id, qty, price) VALUES (?, ?, ?, ?)');
+  const insertLine = db.prepare('INSERT INTO order_lines (order_id, item_id, qty, price, unit, pack) VALUES (?, ?, ?, ?, ?, ?)');
   const updateOrder = db.prepare('UPDATE orders SET customer_id = ?, delivery_date = ?, notes = ?, edited_at = ?, processed = 0, processed_at = NULL WHERE id = ?');
-  const custPriceStmt = db.prepare('SELECT price FROM customer_catalog WHERE customer_id = ? AND item_id = ?');
-  const priceFor = (item) => { const r = custPriceStmt.get(customerId, item.id); return (r && r.price != null) ? r.price : item.price; };
 
   const cleanNotes = (typeof notes === 'string' && notes.trim()) ? notes.trim() : null;
   const run = db.transaction(() => {
@@ -396,7 +406,7 @@ router.patch('/:id', (req, res) => {
       }
     }
     deleteLines.run(orderId);
-    for (const { item, qty } of resolvedLines) insertLine.run(orderId, item.id, qty, priceFor(item));
+    for (const { item, qty, unit, pack, price } of resolvedLines) insertLine.run(orderId, item.id, qty, price, unit, pack);
     updateOrder.run(customerId, deliveryDate, cleanNotes, new Date().toISOString(), orderId);
   });
   run();
