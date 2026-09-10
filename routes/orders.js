@@ -757,6 +757,31 @@ router.get('/invoice-offset', (req, res) => {
   res.json({ offset: db.getInvoiceOffset() });
 });
 // POST /api/orders/invoice-start — set numbering so the next order = {next}.
+// POST /api/orders/invoice-restart — freeze every existing order's CURRENT
+// invoice number (lock it in explicitly), then set numbering so the NEXT order
+// gets {next}. Past orders keep their numbers; only new ones follow the new
+// sequence. Use this instead of invoice-start when you don't want history to shift.
+router.post('/invoice-restart', (req, res) => {
+  const next = Number(req.body && req.body.next);
+  if (!Number.isFinite(next) || next < 1) return res.status(400).json({ error: 'Provide next (a positive number)' });
+  const offset = db.getInvoiceOffset();
+  // Every order without an explicit invoice_number currently shows id + offset.
+  const orders = db.prepare('SELECT id, invoice_number FROM orders').all();
+  const setInv = db.prepare('UPDATE orders SET invoice_number = ? WHERE id = ?');
+  let frozen = 0;
+  const tx = db.transaction(() => {
+    for (const o of orders) {
+      if (o.invoice_number == null || o.invoice_number === '') {
+        setInv.run(o.id + offset, o.id); // lock in the number it shows today
+        frozen++;
+      }
+    }
+  });
+  tx();
+  const result = db.setInvoiceStart(next); // now set offset for the NEXT new order
+  res.json({ ok: true, frozen, ...result });
+});
+
 router.post('/invoice-start', (req, res) => {
   const next = Number(req.body && req.body.next);
   if (!Number.isFinite(next) || next < 1) return res.status(400).json({ error: 'Provide next (a positive number)' });
