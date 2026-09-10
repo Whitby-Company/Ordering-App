@@ -437,6 +437,27 @@ router.get('/export-inventory', (req, res) => {
 
 // GET /api/items/:id/stock-check — reconcile an item's stock: current stored
 // stock vs. correct box consumption from all its orders + logged additions.
+// GET /api/items/consumed-since?date=YYYY-MM-DD — for EVERY item, the total
+// boxes consumed by submitted orders whose delivery date is on/after `date`.
+// Used to reconcile against an inventory snapshot from that date.
+router.get('/consumed-since', (req, res) => {
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(req.query.date || '') ? req.query.date : '2026-09-01';
+  const rows = db.prepare(
+    `SELECT ol.item_id AS itemId, i.case_size AS caseSize, ol.qty, ol.unit
+       FROM order_lines ol
+       JOIN orders o ON o.id = ol.order_id
+       LEFT JOIN items i ON i.id = ol.item_id
+      WHERE o.status = 'submitted' AND o.delivery_date >= ?`
+  ).all(date);
+  const byItem = {};
+  for (const r of rows) {
+    const cs = Number(r.caseSize) > 0 ? Number(r.caseSize) : 1;
+    const boxes = (Number(r.qty) || 0) * (r.unit === 'case' ? cs : 1);
+    byItem[r.itemId] = (byItem[r.itemId] || 0) + boxes;
+  }
+  res.json({ since: date, itemCount: Object.keys(byItem).length, consumed: byItem });
+});
+
 router.get('/:id/stock-check', (req, res) => {
   const itemId = req.params.id;
   const item = db.prepare('SELECT id, name, stock, pack, case_size AS caseSize FROM items WHERE id = ?').get(itemId);
