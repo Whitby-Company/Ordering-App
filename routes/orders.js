@@ -912,6 +912,48 @@ router.get('/invoice-offset', (req, res) => {
 // invoice number (lock it in explicitly), then set numbering so the NEXT order
 // gets {next}. Past orders keep their numbers; only new ones follow the new
 // sequence. Use this instead of invoice-start when you don't want history to shift.
+// POST /api/orders/fix-duplicate-invoices — find invoice numbers used by more
+// than one order and give the EXTRA orders new unique numbers (keeps the number
+// on the earliest order; renumbers the later ones to the next free numbers above
+// the current max). Body: { preview: true } to see the plan without applying.
+router.post('/fix-duplicate-invoices', (req, res) => {
+  const dryRun = !!(req.body && req.body.preview);
+  const offset = db.getInvoiceOffset();
+  const orders = db.prepare(
+    `SELECT o.id, o.invoice_number AS invoiceNumber, o.submitted_at AS submittedAt, c.name AS customer
+       FROM orders o LEFT JOIN customers c ON c.id = o.customer_id
+      WHERE o.status != 'pending'`
+  ).all();
+  const numOf = o => (o.invoiceNumber != null && o.invoiceNumber !== '') ? Number(o.invoiceNumber) : (o.id + offset);
+  // Group by effective number.
+  const byNum = new Map();
+  let maxNum = 0;
+  for (const o of orders) {
+    const n = numOf(o);
+    if (Number.isFinite(n)) { if (!byNum.has(n)) byNum.set(n, []); byNum.get(n).push(o); if (n > maxNum) maxNum = n; }
+  }
+  const used = new Set([...byNum.keys()]);
+  let nextFree = maxNum + 1;
+  const freeNumber = () => { while (used.has(nextFree)) nextFree++; used.add(nextFree); return nextFree; };
+  const setInv = db.prepare('UPDATE orders SET invoice_number = ? WHERE id = ?');
+  const plan = [];
+  const tx = db.transaction(() => {
+    for (const [num, list] of byNum) {
+      if (list.length < 2) continue;
+      // Keep the number on the EARLIEST-submitted order; renumber the rest.
+      const sorted = [...list].sort((a, b) => String(a.submittedAt || '').localeCompare(String(b.submittedAt || '')) || a.id - b.id);
+      for (let i = 1; i < sorted.length; i++) {
+        const o = sorted[i];
+        const newNum = freeNumber();
+        plan.push({ orderId: o.id, customer: o.customer, from: num, to: newNum });
+        if (!dryRun) setInv.run(newNum, o.id);
+      }
+    }
+  });
+  tx();
+  res.json({ preview: dryRun, duplicatesFixed: plan.length, plan });
+});
+
 router.post('/invoice-restart', (req, res) => {
   const next = Number(req.body && req.body.next);
   if (!Number.isFinite(next) || next < 1) return res.status(400).json({ error: 'Provide next (a positive number)' });
