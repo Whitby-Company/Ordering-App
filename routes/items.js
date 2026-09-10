@@ -102,7 +102,7 @@ router.patch('/:id', (req, res) => {
   if (name !== undefined) { updates.push('name = ?'); params.push(name.trim()); }
   if (brand !== undefined) { updates.push('brand = ?'); params.push(brand.trim()); }
   if (pack !== undefined) { updates.push('pack = ?'); params.push(Number(pack)); }
-  if (caseSize !== undefined) { updates.push('case_size = ?'); params.push(caseSize == null || caseSize === '' ? null : Number(caseSize)); }
+  if (caseSize !== undefined) { updates.push('case_size = ?'); params.push(caseSize == null || caseSize === '' || Number(caseSize) <= 0 ? null : Number(caseSize)); }
   if (packLabel !== undefined) { updates.push('packLabel = ?'); params.push(packLabel.trim() || null); }
   if (imageUrl !== undefined) { updates.push('imageUrl = ?'); params.push(imageUrl.trim() || null); }
   if (upc !== undefined) { updates.push('upc = ?'); params.push((upc == null ? '' : String(upc)).trim() || null); }
