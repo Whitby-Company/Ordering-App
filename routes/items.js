@@ -531,4 +531,29 @@ router.get('/:id/stock-log', (req, res) => {
   res.json(rows);
 });
 
+// DELETE /api/items/:id — delete an item, but ONLY if it has no order history
+// (refuses otherwise, so historical invoices never break). Also clears its
+// catalog entries and stock log. Intended for retiring duplicate/unused items.
+router.delete('/:id', (req, res) => {
+  const id = req.params.id;
+  const item = db.prepare('SELECT id, name FROM items WHERE id = ?').get(id);
+  if (!item) return res.status(404).json({ error: 'Item not found' });
+  const lineCount = db.prepare('SELECT COUNT(*) n FROM order_lines WHERE item_id = ?').get(id).n;
+  if (lineCount > 0) {
+    return res.status(409).json({ error: `"${item.name}" is on ${lineCount} order line(s) and can't be deleted (would break invoices). Make it inactive instead.`, lineCount });
+  }
+  const poCount = db.prepare("SELECT COUNT(*) n FROM po_lines WHERE item_id = ?").get(id).n;
+  if (poCount > 0) {
+    return res.status(409).json({ error: `"${item.name}" is on ${poCount} purchase-order line(s) and can't be deleted.`, poCount });
+  }
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM customer_catalog WHERE item_id = ?').run(id);
+    db.prepare('DELETE FROM stock_log WHERE item_id = ?').run(id);
+    db.prepare('DELETE FROM print_order WHERE item_id = ?').run(id);
+    db.prepare('DELETE FROM items WHERE id = ?').run(id);
+  });
+  tx();
+  res.json({ ok: true, deleted: id });
+});
+
 module.exports = router;
