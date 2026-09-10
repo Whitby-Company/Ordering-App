@@ -412,6 +412,83 @@ router.post('/:id/stock-log', (req, res) => {
   res.json({ ok: true, itemId, oldStock, newStock, delta: d });
 });
 
+// GET /api/items/export-inventory — full inventory CSV (id, name, brand, stock,
+// pack, case_size, etc.) for a snapshot / reconciliation.
+router.get('/export-inventory', (req, res) => {
+  const rows = db.prepare(
+    `SELECT id, brand, name, stock, pack, packLabel, case_size AS caseSize,
+            price, case_price AS casePrice, cost, active
+       FROM items ORDER BY brand, name`
+  ).all();
+  const esc = v => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const header = ['Item #', 'Full ID', 'Brand', 'Item', 'Stock (boxes)', 'Pack', 'Pack label', 'Case size', 'Price', 'Case price', 'Cost', 'Active'];
+  const lines = [header.join(',')];
+  for (const r of rows) {
+    lines.push([
+      r.id.split(':').pop(), r.id, r.brand || '', r.name || '', r.stock,
+      r.pack || '', r.packLabel || '', r.caseSize || '', r.price != null ? r.price : '',
+      r.casePrice != null ? r.casePrice : '', r.cost != null ? r.cost : '', r.active ? 'yes' : 'no',
+    ].map(esc).join(','));
+  }
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="inventory-snapshot.csv"');
+  res.send(lines.join('\n'));
+});
+
+// GET /api/items/:id/stock-check — reconcile an item's stock: current stored
+// stock vs. correct box consumption from all its orders + logged additions.
+router.get('/:id/stock-check', (req, res) => {
+  const itemId = req.params.id;
+  const item = db.prepare('SELECT id, name, stock, pack, case_size AS caseSize FROM items WHERE id = ?').get(itemId);
+  if (!item) return res.status(404).json({ error: 'Item not found' });
+  const cs = Number(item.caseSize) > 0 ? Number(item.caseSize) : 1;
+  const lines = db.prepare(
+    `SELECT o.id AS orderId, o.delivery_date AS deliveryDate, c.name AS customer, ol.qty, ol.unit
+       FROM order_lines ol JOIN orders o ON o.id = ol.order_id
+       LEFT JOIN customers c ON c.id = o.customer_id
+      WHERE ol.item_id = ? AND o.status = 'submitted' ORDER BY o.id`
+  ).all(itemId);
+  let totalBoxesConsumed = 0;
+  const orders = lines.map(l => {
+    const boxes = (Number(l.qty) || 0) * (l.unit === 'case' ? cs : 1);
+    totalBoxesConsumed += boxes;
+    return { orderId: l.orderId, customer: l.customer, qty: l.qty, unit: l.unit, boxesConsumed: boxes };
+  });
+  const logs = db.prepare(
+    `SELECT old_stock AS oldStock, new_stock AS newStock, delta, reason, changed_at AS changedAt
+       FROM stock_log WHERE item_id = ? ORDER BY id`
+  ).all(itemId);
+  const totalLoggedAdded = logs.reduce((s, l) => s + (l.delta > 0 ? l.delta : 0), 0);
+  res.json({
+    itemId, name: item.name, currentStock: item.stock, pack: item.pack, caseSize: item.caseSize || null,
+    totalBoxesConsumed, orderCount: orders.length, orders, loggedChanges: logs, totalLoggedAdded,
+  });
+});
+
+// GET /api/items/export-stock-log — the FULL stock change history (no limit),
+// oldest first, so stock can be reconstructed/audited.
+router.get('/export-stock-log', (req, res) => {
+  const rows = db.prepare(
+    `SELECT sl.id, sl.item_id AS itemId, i.name AS item, i.brand,
+            sl.old_stock AS oldStock, sl.new_stock AS newStock, sl.delta,
+            sl.changed_by AS changedBy, sl.reason, sl.changed_at AS changedAt
+       FROM stock_log sl LEFT JOIN items i ON i.id = sl.item_id
+      ORDER BY sl.id ASC`
+  ).all();
+  const esc = v => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const header = ['Log ID', 'Item #', 'Full ID', 'Item', 'Brand', 'Old stock', 'New stock', 'Change', 'Who', 'Reason', 'When'];
+  const lines = [header.join(',')];
+  for (const r of rows) {
+    lines.push([
+      r.id, r.itemId ? r.itemId.split(':').pop() : '', r.itemId || '', r.item || '', r.brand || '',
+      r.oldStock, r.newStock, r.delta, r.changedBy || '', r.reason || '', r.changedAt || '',
+    ].map(esc).join(','));
+  }
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="stock-history-full.csv"');
+  res.send(lines.join('\n'));
+});
+
 // GET /api/items/stock-log/recent — the whole recent trail across items.
 router.get('/stock-log/recent', (req, res) => {
   const rows = db.prepare(
