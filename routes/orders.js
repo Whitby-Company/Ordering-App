@@ -460,7 +460,7 @@ router.get('/reconcile-export', (req, res) => {
   const offset = db.getInvoiceOffset();
   const rows = db.prepare(
     `SELECT o.id AS orderId, o.invoice_number AS invoiceNumber, o.submitted_at AS submittedAt,
-            o.delivery_date AS deliveryDate, c.name AS customer,
+            o.delivery_date AS deliveryDate, o.po_number AS poNumber, c.name AS customer,
             ol.item_id AS itemId, i.name AS itemName, ol.qty, ol.unit, ol.pack, ol.price
        FROM orders o
        LEFT JOIN customers c ON c.id = o.customer_id
@@ -473,14 +473,14 @@ router.get('/reconcile-export', (req, res) => {
     const s = v == null ? '' : String(v);
     return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   };
-  const header = ['Invoice #', 'Order ID', 'Customer', 'Submitted', 'Delivery', 'Item #', 'Item', 'Qty', 'Unit', 'Pack', 'Price/ea', 'Line total'];
+  const header = ['Invoice #', 'Order ID', 'PO #', 'Customer', 'Submitted', 'Delivery', 'Item #', 'Item', 'Qty', 'Unit', 'Pack', 'Price/ea', 'Line total'];
   const lines = [header.join(',')];
   for (const r of rows) {
     const inv = (r.invoiceNumber != null && r.invoiceNumber !== '') ? r.invoiceNumber : (r.orderId + offset);
     const eaches = (Number(r.qty) || 0) * (Number(r.pack) || 1);
     const lineTotal = eaches * (Number(r.price) || 0);
     lines.push([
-      inv, r.orderId, r.customer || '', (r.submittedAt || '').slice(0, 10), r.deliveryDate || '',
+      inv, r.orderId, r.poNumber || '', r.customer || '', (r.submittedAt || '').slice(0, 10), r.deliveryDate || '',
       r.itemId ? r.itemId.split(':').pop() : '', r.itemName || '', r.qty || 0, r.unit || 'box',
       r.pack || '', (Number(r.price) || 0).toFixed(2), lineTotal.toFixed(2),
     ].map(esc).join(','));
