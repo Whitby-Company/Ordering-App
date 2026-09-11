@@ -47,19 +47,29 @@ router.get('/brands', (req, res) => {
 
 // POST /api/items — add a new item  { id, brand, name, stock, price }
 router.post('/', (req, res) => {
-  const { id, brand, name, stock, price } = req.body;
+  let { id, brand, name, stock, price, code, pack, packLabel, caseSize, casePrice, upc, cost, active } = req.body;
+  // Allow passing a bare code + brand instead of a full id — build "BRAND:code".
+  if (!id && code && brand) id = `${brand}:${String(code).trim()}`;
   if (!id || !brand || !name) {
-    return res.status(400).json({ error: 'id, brand, and name are required' });
+    return res.status(400).json({ error: 'brand, name, and a code (or full id) are required' });
   }
   try {
-    db.prepare('INSERT INTO items (id, brand, name, stock, price) VALUES (?, ?, ?, ?, ?)').run(
-      id,
-      brand,
-      name,
+    db.prepare(
+      `INSERT INTO items (id, brand, name, stock, price, pack, packLabel, case_size, case_price, upc, cost, active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      id, brand, name,
       Number(stock) || 0,
-      Number(price) || 0
+      Number(price) || 0,
+      pack != null && pack !== '' ? Number(pack) : 1,
+      packLabel || null,
+      caseSize != null && caseSize !== '' && Number(caseSize) > 0 ? Number(caseSize) : null,
+      casePrice != null && casePrice !== '' ? Number(casePrice) : null,
+      upc || null,
+      cost != null && cost !== '' ? Number(cost) : null,
+      active === false ? 0 : 1
     );
-    res.status(201).json({ id, brand, name, stock: Number(stock) || 0, price: Number(price) || 0, active: 1 });
+    res.status(201).json({ id, brand, name, stock: Number(stock) || 0, price: Number(price) || 0, active: active === false ? 0 : 1 });
   } catch (err) {
     if (err.code === 'SQLITE_CONSTRAINT_PRIMARYKEY') {
       return res.status(409).json({ error: `An item with SKU "${id}" already exists` });
