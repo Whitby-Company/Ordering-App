@@ -462,25 +462,53 @@ router.get('/export-inventory', (req, res) => {
 router.post('/seed-baselines', (req, res) => {
   const asOfDate = /^\d{4}-\d{2}-\d{2}$/.test((req.body && req.body.asOfDate) || '') ? req.body.asOfDate : new Date().toISOString().slice(0, 10);
   const dryRun = !!(req.body && req.body.preview);
-  const items = db.prepare('SELECT id, stock FROM items').all();
+  const reseed = !!(req.body && req.body.reseed);
+  // If re-seeding, clear the previous Migration baselines for this date first so
+  // the corrected (future-added-back) values replace the old wrong ones.
+  if (reseed && !dryRun) {
+    db.prepare("DELETE FROM stock_baseline WHERE created_by = 'Migration' AND as_of_date = ?").run(asOfDate);
+  }
+  const items = db.prepare('SELECT id, stock, case_size AS caseSize FROM items').all();
   const existing = db.prepare('SELECT DISTINCT item_id FROM stock_baseline WHERE as_of_date >= ?').all(asOfDate).map(r => r.item_id);
   const has = new Set(existing);
+  // The OLD model deducted stock at submit time for ALL orders, including
+  // future-dated ones. But those items are still PHYSICALLY on the shelf (not
+  // shipped). So the true on-hand baseline = current stock + future-order boxes.
+  const today = asOfDate;
+  const futureBoxes = {};
+  const orderLines = db.prepare(
+    `SELECT ol.item_id AS itemId, ol.qty, ol.unit, i.case_size AS caseSize, o.delivery_date AS d
+       FROM order_lines ol JOIN orders o ON o.id = ol.order_id LEFT JOIN items i ON i.id = ol.item_id
+      WHERE o.status = 'submitted' AND o.delivery_date > ?`
+  ).all(today);
+  for (const l of orderLines) {
+    const cs = Number(l.caseSize) > 0 ? Number(l.caseSize) : 1;
+    futureBoxes[l.itemId] = (futureBoxes[l.itemId] || 0) + (Number(l.qty) || 0) * (l.unit === 'case' ? cs : 1);
+  }
   const ins = db.prepare('INSERT INTO stock_baseline (item_id, count, as_of_date, created_by, created_at) VALUES (?, ?, ?, ?, ?)');
   const now = new Date().toISOString();
   let seeded = 0;
+  const sample = [];
   if (!dryRun) {
     const tx = db.transaction(() => {
       for (const it of items) {
         if (has.has(it.id)) continue;
-        ins.run(it.id, Number(it.stock) || 0, asOfDate, 'Migration', now);
+        const baselineCount = (Number(it.stock) || 0) + (futureBoxes[it.id] || 0);
+        ins.run(it.id, baselineCount, asOfDate, 'Migration', now);
         seeded++;
       }
     });
     tx();
   } else {
-    seeded = items.filter(it => !has.has(it.id)).length;
+    for (const it of items) {
+      if (has.has(it.id)) continue;
+      seeded++;
+      if ((futureBoxes[it.id] || 0) > 0 && sample.length < 10) {
+        sample.push({ id: it.id, oldStock: it.stock, futureAddedBack: futureBoxes[it.id], newBaseline: (Number(it.stock) || 0) + futureBoxes[it.id] });
+      }
+    }
   }
-  res.json({ ok: true, preview: dryRun, asOfDate, itemsTotal: items.length, seeded });
+  res.json({ ok: true, preview: dryRun, asOfDate, itemsTotal: items.length, seeded, sample });
 });
 
 // POST /api/items/:id/baseline — record a physical count as a dated baseline.
