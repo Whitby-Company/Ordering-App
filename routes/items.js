@@ -556,4 +556,32 @@ router.delete('/:id', (req, res) => {
   res.json({ ok: true, deleted: id });
 });
 
+// POST /api/items/reset-stock-value — set every item currently at exactly `from`
+// (default 100) to `to` (default 0). For clearing a placeholder reset value.
+// Body: { from, to, preview }. Logs each change to stock history.
+router.post('/reset-stock-value', (req, res) => {
+  const from = req.body && req.body.from != null ? Number(req.body.from) : 100;
+  const to = req.body && req.body.to != null ? Number(req.body.to) : 0;
+  const dryRun = !!(req.body && req.body.preview);
+  const items = db.prepare('SELECT id, name, stock FROM items WHERE stock = ?').all(from);
+  const setStock = db.prepare('UPDATE items SET stock = ? WHERE id = ?');
+  const logChange = db.prepare(
+    `INSERT INTO stock_log (item_id, old_stock, new_stock, delta, changed_by, reason, changed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  );
+  const now = new Date().toISOString();
+  let changed = 0;
+  if (!dryRun) {
+    const tx = db.transaction(() => {
+      for (const it of items) {
+        setStock.run(to, it.id);
+        logChange.run(it.id, from, to, to - from, 'Reset placeholder', `Reset ${from} -> ${to}`, now);
+        changed++;
+      }
+    });
+    tx();
+  }
+  res.json({ preview: dryRun, matched: items.length, changed: dryRun ? 0 : changed, from, to });
+});
+
 module.exports = router;
