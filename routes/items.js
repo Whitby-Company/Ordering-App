@@ -445,6 +445,26 @@ router.get('/export-inventory', (req, res) => {
   res.send(lines.join('\n'));
 });
 
+// GET /api/items/:id/stock-log — this item's stock-change history (physical
+// counts, PO receipts, manual edits, redo), newest first. Also returns any PO
+// lines received for this item so the UI can show incoming stock per item.
+router.get('/:id/stock-log', (req, res) => {
+  const id = req.params.id;
+  const log = db.prepare(
+    `SELECT id, old_stock AS oldStock, new_stock AS newStock, delta, changed_by AS changedBy,
+            reason, changed_at AS changedAt
+       FROM stock_log WHERE item_id = ? ORDER BY changed_at DESC, id DESC`
+  ).all(id);
+  const pos = db.prepare(
+    `SELECT pl.qty_ordered AS qtyOrdered, pl.qty_received AS qtyReceived, pl.received_date AS receivedDate,
+            po.reference, po.supplier, po.order_date AS orderDate, po.expected_date AS expectedDate, po.status
+       FROM po_lines pl JOIN purchase_orders po ON po.id = pl.po_id
+      WHERE pl.item_id = ? AND po.status != 'cancelled'
+      ORDER BY COALESCE(pl.received_date, po.expected_date, po.order_date) DESC`
+  ).all(id);
+  res.json({ log, purchaseOrders: pos });
+});
+
 // GET /api/items/:id/stock-check — reconcile an item's stock: current stored
 // stock vs. correct box consumption from all its orders + logged additions.
 // GET /api/items/consumed-since?date=YYYY-MM-DD — for EVERY item, the total
