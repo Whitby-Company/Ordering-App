@@ -304,7 +304,24 @@ db.exec(`CREATE TABLE IF NOT EXISTS po_lines (
 {
   const poLineCols = db.prepare('PRAGMA table_info(po_lines)').all().map(c => c.name);
   if (!poLineCols.includes('qty_short')) db.exec('ALTER TABLE po_lines ADD COLUMN qty_short INTEGER NOT NULL DEFAULT 0');
+  // received_date: the physical date stock arrived (for date-based on-hand). This
+  // lets you back-date a receipt so it flows into on-hand as of that date.
+  if (!poLineCols.includes('received_date')) db.exec('ALTER TABLE po_lines ADD COLUMN received_date TEXT');
 }
+
+// Dated physical-count baselines. Each row = "on as_of_date, this item physically
+// had `count` boxes on hand". On-hand and available stock are COMPUTED from the
+// latest baseline plus dated movements (PO receipts by received_date, orders by
+// delivery_date) — the stored items.stock is kept in sync for compatibility.
+db.exec(`CREATE TABLE IF NOT EXISTS stock_baseline (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id TEXT NOT NULL,
+  count REAL NOT NULL,
+  as_of_date TEXT NOT NULL,      -- ISO date the count was taken
+  created_by TEXT,
+  created_at TEXT
+)`);
+db.exec('CREATE INDEX IF NOT EXISTS idx_stock_baseline_item ON stock_baseline(item_id, as_of_date)');
 
 db.exec(`CREATE TABLE IF NOT EXISTS customer_catalog (
   customer_id INTEGER NOT NULL,
@@ -393,3 +410,71 @@ module.exports.applyShipToSeed = applyShipToSeed;
 module.exports.seedCatalogOnce = seedCatalogOnce;
 module.exports.getInvoiceOffset = getInvoiceOffset;
 module.exports.setInvoiceStart = setInvoiceStart;
+
+// ---- Date-based stock model ----
+// Compute on-hand and available stock for items from the latest physical-count
+// baseline plus dated movements:
+//   on-hand(today)  = baseline.count
+//                     + PO receipts with received_date in (baseline.date, today]
+//                     - order boxes with delivery_date in (baseline.date, today]
+//   available       = on-hand - order boxes with delivery_date > today (future)
+// Boxes: a case line consumes qty * case_size boxes; a box line consumes qty.
+// Items with no baseline fall back to items.stock as their on-hand (legacy).
+function computeStock(opts = {}) {
+  const today = opts.today || new Date().toISOString().slice(0, 10);
+  const items = db.prepare('SELECT id, stock, case_size AS caseSize FROM items').all();
+  const csById = {};
+  for (const it of items) csById[it.id] = Number(it.caseSize) > 0 ? Number(it.caseSize) : 1;
+
+  // Latest baseline per item (most recent as_of_date).
+  const baselines = db.prepare(
+    `SELECT b.item_id AS itemId, b.count, b.as_of_date AS asOf
+       FROM stock_baseline b
+       JOIN (SELECT item_id, MAX(as_of_date) AS mx FROM stock_baseline GROUP BY item_id) m
+         ON m.item_id = b.item_id AND m.mx = b.as_of_date`
+  ).all();
+  const baseByItem = {};
+  for (const b of baselines) baseByItem[b.itemId] = b;
+
+  // Order movements: submitted orders, boxes per item, keyed by whether the
+  // delivery date is after the item's baseline and before/after today.
+  const orderLines = db.prepare(
+    `SELECT ol.item_id AS itemId, ol.qty, ol.unit, o.delivery_date AS deliveryDate
+       FROM order_lines ol JOIN orders o ON o.id = ol.order_id
+      WHERE o.status = 'submitted'`
+  ).all();
+  // PO receipts by received_date.
+  const receipts = db.prepare(
+    `SELECT item_id AS itemId, qty_received AS qty, received_date AS rd
+       FROM po_lines WHERE qty_received > 0`
+  ).all();
+
+  const result = {};
+  for (const it of items) {
+    const base = baseByItem[it.id];
+    const baseDate = base ? base.asOf : null;
+    const baseCount = base ? Number(base.count) : Number(it.stock) || 0;
+    let shippedSinceBase = 0;   // delivered in (baseDate, today]
+    let futureBoxes = 0;        // delivered > today
+    for (const l of orderLines) {
+      if (l.itemId !== it.id) continue;
+      const boxes = (Number(l.qty) || 0) * (l.unit === 'case' ? csById[it.id] : 1);
+      const d = l.deliveryDate;
+      if (!d) continue;
+      if (d > today) futureBoxes += boxes;
+      else if (!baseDate || d > baseDate) shippedSinceBase += boxes;
+    }
+    let receivedSinceBase = 0;
+    for (const r of receipts) {
+      if (r.itemId !== it.id) continue;
+      const d = r.rd;
+      if (!d) continue; // undated receipts don't affect the dated model
+      if (d <= today && (!baseDate || d > baseDate)) receivedSinceBase += Number(r.qty) || 0;
+    }
+    const onHand = baseCount + receivedSinceBase - shippedSinceBase;
+    const available = onHand - futureBoxes;
+    result[it.id] = { onHand, available, futureBoxes, baseDate, baseCount, hasBaseline: !!base };
+  }
+  return result;
+}
+module.exports.computeStock = computeStock;
