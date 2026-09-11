@@ -324,4 +324,23 @@ router.get('/verify-price-list', (req, res) => {
   res.json({ checked, matches, mismatchCount: checked - matches, mismatches });
 });
 
+// DELETE /api/customers/:id — delete a customer, but ONLY if they have no
+// orders (refuses otherwise so history/invoices never break). Also clears their
+// catalog entries.
+router.delete('/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const cust = db.prepare('SELECT id, name FROM customers WHERE id = ?').get(id);
+  if (!cust) return res.status(404).json({ error: 'Customer not found' });
+  const orderCount = db.prepare('SELECT COUNT(*) n FROM orders WHERE customer_id = ?').get(id).n;
+  if (orderCount > 0) {
+    return res.status(409).json({ error: `"${cust.name}" has ${orderCount} order(s) and can't be deleted (would break history). Make them inactive instead.`, orderCount });
+  }
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM customer_catalog WHERE customer_id = ?').run(id);
+    db.prepare('DELETE FROM customers WHERE id = ?').run(id);
+  });
+  tx();
+  res.json({ ok: true, deleted: id });
+});
+
 module.exports = router;
