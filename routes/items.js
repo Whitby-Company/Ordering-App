@@ -29,10 +29,20 @@ router.get('/', (req, res) => {
   }
   sql += ' ORDER BY brand ASC, name ASC';
 
+  const computed = db.computeStock();
   const items = db.prepare(sql).all(...params).map(it => {
     let contains = [];
     if (it.contains) { try { contains = JSON.parse(it.contains) || []; } catch { contains = []; } }
-    return { ...it, contains };
+    const c = computed[it.id];
+    // onHand = physical now; available = what's left to sell (on-hand − future orders).
+    // Falls back to stored stock when there's no baseline yet.
+    return {
+      ...it, contains,
+      onHand: c ? c.onHand : it.stock,
+      available: c ? c.available : it.stock,
+      futureBoxes: c ? c.futureBoxes : 0,
+      hasBaseline: c ? c.hasBaseline : false,
+    };
   });
   res.json(items);
 });
@@ -443,6 +453,64 @@ router.get('/export-inventory', (req, res) => {
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename="inventory-snapshot.csv"');
   res.send(lines.join('\n'));
+});
+
+// POST /api/items/seed-baselines — create a starting baseline for every item
+// from its CURRENT stock, as of `asOfDate` (default today). Run once to migrate
+// into the date-based model. Skips items that already have a baseline on/after
+// that date. Body: { asOfDate, preview }.
+router.post('/seed-baselines', (req, res) => {
+  const asOfDate = /^\d{4}-\d{2}-\d{2}$/.test((req.body && req.body.asOfDate) || '') ? req.body.asOfDate : new Date().toISOString().slice(0, 10);
+  const dryRun = !!(req.body && req.body.preview);
+  const items = db.prepare('SELECT id, stock FROM items').all();
+  const existing = db.prepare('SELECT DISTINCT item_id FROM stock_baseline WHERE as_of_date >= ?').all(asOfDate).map(r => r.item_id);
+  const has = new Set(existing);
+  const ins = db.prepare('INSERT INTO stock_baseline (item_id, count, as_of_date, created_by, created_at) VALUES (?, ?, ?, ?, ?)');
+  const now = new Date().toISOString();
+  let seeded = 0;
+  if (!dryRun) {
+    const tx = db.transaction(() => {
+      for (const it of items) {
+        if (has.has(it.id)) continue;
+        ins.run(it.id, Number(it.stock) || 0, asOfDate, 'Migration', now);
+        seeded++;
+      }
+    });
+    tx();
+  } else {
+    seeded = items.filter(it => !has.has(it.id)).length;
+  }
+  res.json({ ok: true, preview: dryRun, asOfDate, itemsTotal: items.length, seeded });
+});
+
+// POST /api/items/:id/baseline — record a physical count as a dated baseline.
+// This is the on-hand truth as of `asOfDate` (default today). On-hand/available
+// are then computed from it + movements. Also updates items.stock (= on-hand now)
+// for compatibility, and logs the change.
+router.post('/:id/baseline', (req, res) => {
+  const id = req.params.id;
+  const item = db.prepare('SELECT id, name, stock FROM items WHERE id = ?').get(id);
+  if (!item) return res.status(404).json({ error: 'Item not found' });
+  const count = Number(req.body && req.body.count);
+  if (!Number.isFinite(count)) return res.status(400).json({ error: 'count (boxes) required' });
+  const asOfDate = /^\d{4}-\d{2}-\d{2}$/.test(req.body.asOfDate || '') ? req.body.asOfDate : new Date().toISOString().slice(0, 10);
+  const by = (typeof req.body.changedBy === 'string' && req.body.changedBy.trim()) ? req.body.changedBy.trim() : null;
+  const now = new Date().toISOString();
+  const tx = db.transaction(() => {
+    db.prepare('INSERT INTO stock_baseline (item_id, count, as_of_date, created_by, created_at) VALUES (?, ?, ?, ?, ?)')
+      .run(id, count, asOfDate, by, now);
+  });
+  tx();
+  // Recompute on-hand now and sync items.stock so legacy reads stay consistent.
+  const c = db.computeStock()[id];
+  const onHandNow = c ? c.onHand : count;
+  if (Number(item.stock) !== onHandNow) {
+    db.prepare('UPDATE items SET stock = ? WHERE id = ?').run(onHandNow, id);
+    db.prepare(`INSERT INTO stock_log (item_id, old_stock, new_stock, delta, changed_by, reason, changed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .run(id, item.stock, onHandNow, onHandNow - Number(item.stock), by, `Physical count ${asOfDate}`, now);
+  }
+  res.json({ ok: true, id, asOfDate, count, onHand: onHandNow, available: c ? c.available : onHandNow });
 });
 
 // GET /api/items/:id/stock-log — this item's stock-change history (physical
