@@ -478,3 +478,20 @@ function computeStock(opts = {}) {
   return result;
 }
 module.exports.computeStock = computeStock;
+
+// Sync the stored items.stock to the computed ON-HAND for the given item ids
+// (or all items if none given). Call this after any order/PO change so the
+// stored stock never drifts from the date-based computation — the computed
+// values are the source of truth; items.stock is just a cached on-hand.
+function syncStock(itemIds = null) {
+  const computed = computeStock();
+  const upd = db.prepare('UPDATE items SET stock = ? WHERE id = ?');
+  const tx = db.transaction((ids) => {
+    const list = ids && ids.length ? ids : Object.keys(computed);
+    for (const id of list) {
+      if (computed[id]) upd.run(computed[id].onHand, id);
+    }
+  });
+  tx(itemIds);
+}
+module.exports.syncStock = syncStock;

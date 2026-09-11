@@ -183,14 +183,14 @@ router.patch('/:id/submit', (req, res) => {
     `SELECT ol.item_id, ol.qty, i.name, i.stock FROM order_lines ol
      JOIN items i ON i.id = ol.item_id WHERE ol.order_id = ?`
   ).all(id);
-  // Stock may go negative (orders are placed before restock), so no cap here.
-  const decrementStock = db.prepare('UPDATE items SET stock = stock - ? WHERE id = ?');
+  // Stock is computed from baselines + dated movements; just mark submitted,
+  // then sync the cached on-hand for the affected items.
   const submittedAt = new Date().toISOString();
   const run = db.transaction(() => {
-    for (const l of lines) decrementStock.run(l.qty, l.item_id);
     db.prepare("UPDATE orders SET status = 'submitted', submitted_at = ? WHERE id = ?").run(submittedAt, id);
   });
   run();
+  db.syncStock(lines.map(l => l.item_id));
 
   const updated = db.prepare(
     `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
@@ -253,7 +253,6 @@ router.post('/', (req, res) => {
     'INSERT INTO orders (customer_id, delivery_date, submitted_at, notes, submitted_by, status, po_number, invoice_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
   );
   const insertLine = db.prepare('INSERT INTO order_lines (order_id, item_id, qty, price, unit, pack) VALUES (?, ?, ?, ?, ?, ?)');
-  const decrementStock = db.prepare('UPDATE items SET stock = stock - ? WHERE id = ?');
 
   const submittedAt = new Date().toISOString();
   const cleanNotes = (typeof notes === 'string' && notes.trim()) ? notes.trim() : null;
@@ -268,17 +267,13 @@ router.post('/', (req, res) => {
     const orderId = orderInfo.lastInsertRowid;
     for (const { item, qty, unit, pack, price } of resolvedLines) {
       insertLine.run(orderId, item.id, qty, price, unit, pack);
-      // Stock is counted in boxes; a case order consumes qty * case_size boxes.
-      // Out-of-stock items ($0) leave stock at 0 — don't drive it negative.
-      if (!isPending && (Number(item.stock) || 0) > 0) {
-        const boxes = qty * (unit === 'case' ? (item.case_size || 1) : 1);
-        decrementStock.run(boxes, item.id);
-      }
     }
     return orderId;
   });
 
   const orderId = createOrder();
+  // Stock is computed from baselines + dated movements; sync the cached on-hand.
+  if (!isPending) db.syncStock(resolvedLines.map(l => l.item.id));
 
   res.status(201).json({
     id: orderId,
@@ -393,27 +388,19 @@ router.patch('/:id', (req, res) => {
   // haven't reserved any stock, so no check applies to them.
   // Stock may go negative (orders placed before restock), so no cap on edits.
 
-  const adjustStock = db.prepare('UPDATE items SET stock = stock + ? WHERE id = ?');
   const deleteLines = db.prepare('DELETE FROM order_lines WHERE order_id = ?');
   const insertLine = db.prepare('INSERT INTO order_lines (order_id, item_id, qty, price, unit, pack) VALUES (?, ?, ?, ?, ?, ?)');
   const updateOrder = db.prepare('UPDATE orders SET customer_id = ?, delivery_date = ?, notes = ?, edited_at = ?, processed = 0, processed_at = NULL WHERE id = ?');
 
   const cleanNotes = (typeof notes === 'string' && notes.trim()) ? notes.trim() : null;
   const run = db.transaction(() => {
-    if (!isPending) {
-      const touchedItems = new Set([...Object.keys(oldBoxesByItem), ...Object.keys(newBoxesByItem)]);
-      for (const itemId of touchedItems) {
-        const oldBoxes = oldBoxesByItem[itemId] || 0;
-        const newBoxes = newBoxesByItem[itemId] || 0;
-        const delta = oldBoxes - newBoxes; // positive = return stock, negative = consume more
-        if (delta !== 0) adjustStock.run(delta, itemId);
-      }
-    }
     deleteLines.run(orderId);
     for (const { item, qty, unit, pack, price } of resolvedLines) insertLine.run(orderId, item.id, qty, price, unit, pack);
     updateOrder.run(customerId, deliveryDate, cleanNotes, new Date().toISOString(), orderId);
   });
   run();
+  // Stock is computed; sync cached on-hand for all items touched (old + new lines).
+  db.syncStock([...new Set([...Object.keys(oldBoxesByItem), ...Object.keys(newBoxesByItem)])]);
 
   const updated = db.prepare(
     `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
@@ -436,19 +423,16 @@ router.delete('/:id', (req, res) => {
   if (!order) return res.status(404).json({ error: 'Order not found' });
 
   const lines = db.prepare('SELECT item_id, qty FROM order_lines WHERE order_id = ?').all(orderId);
-  const adjustStock = db.prepare('UPDATE items SET stock = stock + ? WHERE id = ?');
   const deleteLines = db.prepare('DELETE FROM order_lines WHERE order_id = ?');
   const deleteOrder = db.prepare('DELETE FROM orders WHERE id = ?');
 
   const run = db.transaction(() => {
-    // Only submitted orders reserved stock, so only they return it on delete.
-    if (order.status !== 'pending') {
-      for (const l of lines) adjustStock.run(l.qty, l.item_id);
-    }
     deleteLines.run(orderId);
     deleteOrder.run(orderId);
   });
   run();
+  // Stock is computed; sync cached on-hand for the freed items.
+  db.syncStock(lines.map(l => l.item_id));
 
   res.json({ id: Number(orderId), deleted: true });
 });
