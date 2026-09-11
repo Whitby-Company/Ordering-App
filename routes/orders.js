@@ -558,7 +558,10 @@ router.post('/inventory-redo', (req, res) => {
       const start = Number(starting[it.id]) || 0;
       const out = consumed[it.id] || 0;
       const inn = received[it.id] || 0;
-      const correct = Math.round((start - out + inn) * 100) / 100;
+      let correct = Math.round((start - out + inn) * 100) / 100;
+      // Optionally clamp impossible negatives to 0 (physical stock can't be < 0).
+      // A negative here means the starting count was too low / already negative.
+      if (b.clampNegative && correct < 0) correct = 0;
       const cur = Number(it.stock) || 0;
       if (Math.abs(correct - cur) >= 0.001) {
         rows.push({ id: it.id, name: it.name, start, consumed: out, received: inn, correct, current: cur, diff: Math.round((correct - cur) * 100) / 100 });
