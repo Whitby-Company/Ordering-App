@@ -469,7 +469,9 @@ router.post('/seed-baselines', (req, res) => {
     db.prepare("DELETE FROM stock_baseline WHERE created_by = 'Migration' AND as_of_date = ?").run(asOfDate);
   }
   const items = db.prepare('SELECT id, stock, case_size AS caseSize FROM items').all();
-  const existing = db.prepare('SELECT DISTINCT item_id FROM stock_baseline WHERE as_of_date >= ?').all(asOfDate).map(r => r.item_id);
+  // When reseeding, treat existing Migration baselines as replaceable — so the
+  // preview shows the corrected values and the apply clears+reinserts them.
+  const existing = reseed ? [] : db.prepare('SELECT DISTINCT item_id FROM stock_baseline WHERE as_of_date >= ?').all(asOfDate).map(r => r.item_id);
   const has = new Set(existing);
   // The OLD model deducted stock at submit time for ALL orders, including
   // future-dated ones. But those items are still PHYSICALLY on the shelf (not
