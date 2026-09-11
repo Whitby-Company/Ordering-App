@@ -144,14 +144,16 @@ router.post('/:id/receive', (req, res) => {
   const receipts = (req.body && req.body.all)
     ? lines.map(l => ({ itemId: l.item_id, qty: l.qty_ordered - l.qty_received })).filter(r => r.qty > 0)
     : ((req.body && req.body.receipts) || []);
+  // Received date — the physical date stock arrived (drives on-hand as of that
+  // date). Defaults to today; can be back-dated.
+  const receivedDate = /^\d{4}-\d{2}-\d{2}$/.test((req.body && req.body.receivedDate) || '') ? req.body.receivedDate : new Date().toISOString().slice(0, 10);
 
-  const addStock = db.prepare('UPDATE items SET stock = stock + ? WHERE id = ?');
-  const getStock = db.prepare('SELECT stock FROM items WHERE id = ?');
-  const setRecv = db.prepare('UPDATE po_lines SET qty_received = qty_received + ? WHERE id = ?');
+  const setRecv = db.prepare('UPDATE po_lines SET qty_received = qty_received + ?, received_date = ? WHERE id = ?');
   const logStock = db.prepare(`INSERT INTO stock_log (item_id, old_stock, new_stock, delta, changed_by, reason, changed_at)
                                VALUES (?, ?, ?, ?, ?, ?, ?)`);
   const who = (req.body && req.body.receivedBy) ? String(req.body.receivedBy) : null;
   const poRef = po.reference || po.id;
+  const touched = [];
   let received = 0;
   const tx = db.transaction(() => {
     for (const r of receipts) {
@@ -161,18 +163,22 @@ router.post('/:id/receive', (req, res) => {
       const remaining = line.qty_ordered - line.qty_received;
       const take = Math.min(qty, remaining);
       if (take <= 0) continue;
-      setRecv.run(take, line.id);
-      const cur = getStock.get(r.itemId);
-      const oldStock = cur ? cur.stock : 0;
-      addStock.run(take, r.itemId); // incoming -> on-hand
-      // Record it in the item's stock history like any other stock change.
-      logStock.run(r.itemId, oldStock, oldStock + take, take, who, `Received PO ${poRef}`, new Date().toISOString());
+      setRecv.run(take, receivedDate, line.id);
+      touched.push(r.itemId);
       received += take;
     }
   });
   tx();
+  // Stock is computed from baselines + dated movements (the received_date now
+  // counts toward on-hand). Sync the cached on-hand + log the receipt.
+  db.syncStock(touched);
+  const now = new Date().toISOString();
+  for (const itemId of touched) {
+    const cur = db.prepare('SELECT stock FROM items WHERE id = ?').get(itemId);
+    logStock.run(itemId, cur ? cur.stock : 0, cur ? cur.stock : 0, 0, who, `Received PO ${poRef} (${receivedDate})`, now);
+  }
   refreshStatus(id);
-  res.json({ ok: true, received, po: getPO(id) });
+  res.json({ ok: true, received, receivedDate, po: getPO(id) });
 });
 
 // POST /api/purchase-orders/:id/close-short — mark the PO done, recording the
