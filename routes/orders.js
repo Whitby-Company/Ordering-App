@@ -533,11 +533,14 @@ router.post('/inventory-redo', (req, res) => {
     const boxes = (Number(l.qty) || 0) * (l.unit === 'case' ? cs : 1);
     consumed[l.itemId] = (consumed[l.itemId] || 0) + boxes;
   }
-  // 2. Positive stock-log changes AFTER the start date (PO receipts + manual adds).
+  // 2. Positive stock-log changes AFTER the start date. Only count REAL PO
+  // receipts (reason like "Received PO ...") — NOT manual edits/resets (e.g.
+  // setting everything to 100), which would wrongly inflate the result.
   const received = {};
   const logs = db.prepare(
-    `SELECT item_id AS itemId, delta FROM stock_log
-      WHERE delta > 0 AND substr(changed_at, 1, 10) > ?`
+    `SELECT item_id AS itemId, delta, reason FROM stock_log
+      WHERE delta > 0 AND substr(changed_at, 1, 10) > ?
+        AND reason LIKE 'Received PO%'`
   ).all(startDate);
   for (const l of logs) received[l.itemId] = (received[l.itemId] || 0) + l.delta;
 
