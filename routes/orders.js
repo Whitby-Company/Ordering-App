@@ -945,6 +945,12 @@ router.post('/invoice-reconcile', (req, res) => {
 router.get('/invoice-offset', (req, res) => {
   res.json({ offset: db.getInvoiceOffset() });
 });
+// GET /api/orders/next-invoice — the invoice number a NEW submitted order will
+// get right now (highest in use + 1). The order-entry INV# field shows this so
+// what's displayed matches what's assigned on submit.
+router.get('/next-invoice', (req, res) => {
+  res.json({ nextInvoice: db.nextInvoiceNumber() });
+});
 // POST /api/orders/invoice-start — set numbering so the next order = {next}.
 // POST /api/orders/invoice-restart — freeze every existing order's CURRENT
 // invoice number (lock it in explicitly), then set numbering so the NEXT order
