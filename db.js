@@ -259,6 +259,10 @@ if (!orderColumns.includes('invoice_number')) {
 if (!orderColumns.includes('voided')) {
   db.exec('ALTER TABLE orders ADD COLUMN voided INTEGER NOT NULL DEFAULT 0');
 }
+// When the Taiyo PDF was last "dropped" (saved) for this order.
+if (!orderColumns.includes('taiyo_dropped_at')) {
+  db.exec('ALTER TABLE orders ADD COLUMN taiyo_dropped_at TEXT');
+}
 // Whether this order has been exported to QuickBooks (batched import).
 if (!orderColumns.includes('exported')) {
   db.exec('ALTER TABLE orders ADD COLUMN exported INTEGER NOT NULL DEFAULT 0');
