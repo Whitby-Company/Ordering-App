@@ -298,12 +298,19 @@ function setInvoiceFloor(n) {
 // contiguous with no skips. Excludes a given order id (for re-assignment).
 function nextInvoiceNumber(excludeOrderId = null) {
   const floor = getInvoiceFloor();
-  // All explicit invoice numbers currently in use by submitted orders.
+  const offset = getInvoiceOffset();
+  // Every submitted order's EFFECTIVE number is in use: the explicit
+  // invoice_number if set, otherwise id + offset. Both must be excluded so a new
+  // number never collides with an offset-based order that has no explicit number.
   const rows = db.prepare(
-    "SELECT id, invoice_number AS inv FROM orders WHERE status != 'pending' AND invoice_number IS NOT NULL AND invoice_number != ''"
+    "SELECT id, invoice_number AS inv FROM orders WHERE status != 'pending'"
   ).all();
   const used = new Set();
-  for (const r of rows) { if (excludeOrderId != null && r.id === excludeOrderId) continue; used.add(Number(r.inv)); }
+  for (const r of rows) {
+    if (excludeOrderId != null && r.id === excludeOrderId) continue;
+    const eff = (r.inv != null && r.inv !== '') ? Number(r.inv) : (r.id + offset);
+    used.add(eff);
+  }
   let n = floor;
   while (used.has(n)) n++;
   return n;
