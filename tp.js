@@ -149,7 +149,11 @@ function buildTP(orders, brandAbbrev = {}, invoiceOffset = 0) {
       const fields = {
         Customer: qbName,
         'Transaction Date': date,
-        RefNumber: Number(order.id) + Number(invoiceOffset || 0),
+        // Invoice #: the order's explicit invoice_number if set, otherwise
+        // id + offset — matching how the invoice number shows everywhere else.
+        RefNumber: (order.invoiceNumber != null && order.invoiceNumber !== '')
+          ? Number(order.invoiceNumber)
+          : Number(order.id) + Number(invoiceOffset || 0),
         'PO Number': poNumber,
         'Template Name': '1 - HG  INV W/ UPC',
         // Ship-to block, composed explicitly so it prints in this exact order:
