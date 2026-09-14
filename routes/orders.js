@@ -263,6 +263,28 @@ router.post('/', (req, res) => {
   const cleanSubmittedBy = (typeof req.body.submittedBy === 'string' && req.body.submittedBy.trim()) ? req.body.submittedBy.trim() : null;
   const status = isPending ? 'pending' : 'submitted';
 
+  // SERVER-SIDE duplicate guard (catches every path — mobile, desktop, multiple
+  // users, stale client data). If a matching SUBMITTED order already exists for
+  // the same customer + delivery date with the same items+quantities, reject it
+  // unless the caller passes force:true (the user confirmed it's intentional).
+  if (!isPending && !req.body.force) {
+    const sigOf = (lines) => lines.map(l => `${l.item ? l.item.id : l.itemId}:${l.qty}`).sort().join(',');
+    const newSig = sigOf(resolvedLines.map(l => ({ item: l.item, qty: l.qty })));
+    const candidates = db.prepare(
+      "SELECT id, invoice_number AS inv, submitted_at AS submittedAt FROM orders WHERE status = 'submitted' AND customer_id = ? AND delivery_date = ? AND voided = 0"
+    ).all(customerId, deliveryDate);
+    for (const c of candidates) {
+      const cl = db.prepare('SELECT item_id AS itemId, qty FROM order_lines WHERE order_id = ?').all(c.id);
+      if (sigOf(cl) === newSig && newSig !== '') {
+        return res.status(409).json({
+          error: 'duplicate',
+          message: `An identical order already exists for this store and delivery date (invoice ${c.inv || c.id}). Submit again to create it anyway.`,
+          existingOrderId: c.id, existingInvoice: c.inv,
+        });
+      }
+    }
+  }
+
   const cleanPo = (typeof req.body.poNumber === 'string' && req.body.poNumber.trim()) ? req.body.poNumber.trim() : null;
   const invNum = Number(req.body.invoiceNumber);
   // Explicit number if given; otherwise, for a SUBMITTED order, assign the next
