@@ -247,8 +247,9 @@ router.post('/', (req, res) => {
     } else {
       price = unit === 'case' ? (item.case_price != null ? item.case_price : item.price) : item.price;
     }
-    // Out-of-stock items are ordered at $0 (no stock to fulfill/charge for).
-    if ((Number(item.stock) || 0) <= 0) price = 0;
+    // Keep the price as entered/resolved even for out-of-stock items — orders
+    // are placed for future delivery when the item will be back in stock, so the
+    // real price must be charged (no auto-$0).
     // Stock is tracked in eaches at the box level; qty of this unit uses `pack` eaches.
     resolvedLines.push({ item, qty, unit, pack, price });
   }
@@ -404,7 +405,7 @@ router.patch('/:id', (req, res) => {
     if (line.price != null && Number.isFinite(Number(line.price))) price = Number(line.price);
     else if (cat && cat.price != null) price = cat.price;
     else price = unit === 'case' ? (item.case_price != null ? item.case_price : item.price) : item.price;
-    if ((Number(item.stock) || 0) <= 0) price = 0;
+    // No auto-$0 for out-of-stock — keep the real price (future-dated orders).
     // Stock is in boxes; a case line consumes qty × case_size boxes.
     const boxes = qty * (unit === 'case' ? (item.case_size || 1) : 1);
     newBoxesByItem[line.itemId] = (newBoxesByItem[line.itemId] || 0) + boxes;
