@@ -465,6 +465,30 @@ router.get('/export-inventory', (req, res) => {
   res.send(lines.join('\n'));
 });
 
+// POST /api/items/rebaseline-to-stock — CLEAN RESET of the date-based model.
+// Sets every item's baseline = its current stored `stock`, dated today. Because
+// the baseline date is today, computeStock returns exactly the stored stock as
+// on-hand (no past orders re-subtracted) — fixing any double-subtraction from
+// items that had no baseline. Future orders then correctly reduce "available".
+// Body: { preview: true } to see the count without writing.
+router.post('/rebaseline-to-stock', (req, res) => {
+  const dryRun = !!(req.body && req.body.preview);
+  const today = new Date().toISOString().slice(0, 10);
+  const items = db.prepare('SELECT id, stock FROM items').all();
+  const ins = db.prepare('INSERT INTO stock_baseline (item_id, count, as_of_date, created_by, created_at) VALUES (?, ?, ?, ?, ?)');
+  const now = new Date().toISOString();
+  let n = 0;
+  if (!dryRun) {
+    const tx = db.transaction(() => {
+      for (const it of items) { ins.run(it.id, Number(it.stock) || 0, today, 'Rebaseline', now); n++; }
+    });
+    tx();
+  } else {
+    n = items.length;
+  }
+  res.json({ ok: true, preview: dryRun, asOfDate: today, itemsBaselined: n });
+});
+
 // POST /api/items/seed-baselines — create a starting baseline for every item
 // from its CURRENT stock, as of `asOfDate` (default today). Run once to migrate
 // into the date-based model. Skips items that already have a baseline on/after
