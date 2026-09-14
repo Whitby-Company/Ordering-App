@@ -111,6 +111,12 @@ if (!itemColumns.includes('case_price')) {
 if (!itemColumns.includes('cost')) {
   db.exec('ALTER TABLE items ADD COLUMN cost REAL');
 }
+// Taiyo (warehouse partner) cost per CASE — for items Taiyo owns. When set (>0),
+// the item is treated as Taiyo-owned and appears in the Taiyo report, where we
+// owe Taiyo (cases sold × taiyo_cost).
+if (!itemColumns.includes('taiyo_cost')) {
+  db.exec('ALTER TABLE items ADD COLUMN taiyo_cost REAL');
+}
 // Free-text note per item (e.g. "backordered until March").
 if (!itemColumns.includes('notes')) {
   db.exec('ALTER TABLE items ADD COLUMN notes TEXT');

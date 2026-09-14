@@ -1253,4 +1253,47 @@ router.get('/:id/margin', (req, res) => {
   res.json({ order, missingCost, totals: { sell: totSell, cost: totCost, profit, marginPct }, items });
 });
 
+// GET /api/orders/taiyo-report?from=YYYY-MM-DD&to=YYYY-MM-DD — for the Taiyo
+// warehouse partner: every sale of a Taiyo-owned item (taiyo_cost set) in the
+// range (by DELIVERY date), with cases sold and amount owed (cases × taiyo_cost).
+router.get('/taiyo-report', (req, res) => {
+  const from = /^\d{4}-\d{2}-\d{2}$/.test(req.query.from || '') ? req.query.from : null;
+  const to = /^\d{4}-\d{2}-\d{2}$/.test(req.query.to || '') ? req.query.to : null;
+  const taiyoItems = db.prepare('SELECT id, brand, name, pack, case_size AS caseSize, taiyo_cost AS taiyoCost FROM items WHERE taiyo_cost IS NOT NULL AND taiyo_cost > 0').all();
+  const byId = {}; for (const it of taiyoItems) byId[it.id] = it;
+  const clauses = ["o.status = 'submitted'", 'o.voided = 0'];
+  const params = [];
+  if (from) { clauses.push('o.delivery_date >= ?'); params.push(from); }
+  if (to) { clauses.push('o.delivery_date <= ?'); params.push(to); }
+  const lines = db.prepare(
+    `SELECT ol.item_id AS itemId, ol.qty, ol.unit, o.id AS orderId, o.invoice_number AS invoiceNumber,
+            o.delivery_date AS deliveryDate, o.po_number AS poNumber, c.name AS customer
+       FROM order_lines ol JOIN orders o ON o.id = ol.order_id JOIN customers c ON c.id = o.customer_id
+      WHERE ${clauses.join(' AND ')} ORDER BY o.delivery_date, o.id`
+  ).all(...params);
+
+  const items = {};
+  let grandCases = 0, grandOwed = 0;
+  for (const l of lines) {
+    const it = byId[l.itemId];
+    if (!it) continue;
+    // Cases sold: a case line = qty cases; a box line = qty / case_size cases.
+    const cs = Number(it.caseSize) > 0 ? Number(it.caseSize) : 1;
+    const cases = l.unit === 'case' ? (Number(l.qty) || 0) : (Number(l.qty) || 0) / cs;
+    const owed = cases * Number(it.taiyoCost);
+    const g = items[l.itemId] || (items[l.itemId] = { itemId: l.itemId, brand: it.brand, name: it.name, taiyoCost: Number(it.taiyoCost), cases: 0, owed: 0, sales: [] });
+    g.cases += cases; g.owed += owed;
+    g.sales.push({ orderId: l.orderId, invoiceNumber: l.invoiceNumber, deliveryDate: l.deliveryDate, customer: l.customer, poNumber: l.poNumber, qty: l.qty, unit: l.unit, cases });
+    grandCases += cases; grandOwed += owed;
+  }
+  // Round cases to 2dp for display; keep items that had no sales too (0), so the
+  // report always shows the full Taiyo list.
+  for (const it of taiyoItems) {
+    if (!items[it.id]) items[it.id] = { itemId: it.id, brand: it.brand, name: it.name, taiyoCost: Number(it.taiyoCost), cases: 0, owed: 0, sales: [] };
+  }
+  const list = Object.values(items).map(g => ({ ...g, cases: Math.round(g.cases * 100) / 100, owed: Math.round(g.owed * 100) / 100 }))
+    .sort((a, b) => (a.brand || '').localeCompare(b.brand || '') || (a.name || '').localeCompare(b.name || ''));
+  res.json({ from, to, items: list, grandCases: Math.round(grandCases * 100) / 100, grandOwed: Math.round(grandOwed * 100) / 100 });
+});
+
 module.exports = router;

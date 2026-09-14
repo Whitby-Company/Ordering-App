@@ -13,7 +13,7 @@ const router = express.Router();
 // Optional query params: ?brand=Oberto  ?lowStockMax=5  ?includeInactive=true
 router.get('/', (req, res) => {
   const { brand, lowStockMax, includeInactive } = req.query;
-  let sql = 'SELECT id, brand, name, stock, price, pack, packLabel, imageUrl, upc, active, contains, is_default as isDefault, case_size as caseSize, case_price as casePrice, cost, notes FROM items WHERE 1=1';
+  let sql = 'SELECT id, brand, name, stock, price, pack, packLabel, imageUrl, upc, active, contains, is_default as isDefault, case_size as caseSize, case_price as casePrice, cost, taiyo_cost as taiyoCost, notes FROM items WHERE 1=1';
   const params = [];
 
   if (includeInactive !== 'true') {
@@ -93,7 +93,7 @@ router.post('/', (req, res) => {
 // (Stock corrections here are for fixing mistakes — normal stock changes
 // should happen via orders.)
 router.patch('/:id', (req, res) => {
-  const { stock, name, brand, pack, packLabel, imageUrl, upc, price, active, contains, isDefault, cost, notes, caseSize, changedBy, reason } = req.body;
+  const { stock, name, brand, pack, packLabel, imageUrl, upc, price, active, contains, isDefault, cost, notes, caseSize, taiyoCost, changedBy, reason } = req.body;
   if (stock === undefined && name === undefined && brand === undefined && pack === undefined && packLabel === undefined && imageUrl === undefined && upc === undefined && price === undefined && active === undefined && contains === undefined && isDefault === undefined && cost === undefined && notes === undefined && caseSize === undefined) {
     return res.status(400).json({ error: 'At least one field must be provided' });
   }
@@ -123,6 +123,7 @@ router.patch('/:id', (req, res) => {
   if (brand !== undefined) { updates.push('brand = ?'); params.push(brand.trim()); }
   if (pack !== undefined) { updates.push('pack = ?'); params.push(Number(pack)); }
   if (caseSize !== undefined) { updates.push('case_size = ?'); params.push(caseSize == null || caseSize === '' || Number(caseSize) <= 0 ? null : Number(caseSize)); }
+  if (taiyoCost !== undefined) { updates.push('taiyo_cost = ?'); params.push(taiyoCost == null || taiyoCost === '' || Number(taiyoCost) <= 0 ? null : Number(taiyoCost)); }
   if (packLabel !== undefined) { updates.push('packLabel = ?'); params.push(packLabel.trim() || null); }
   if (imageUrl !== undefined) { updates.push('imageUrl = ?'); params.push(imageUrl.trim() || null); }
   if (upc !== undefined) { updates.push('upc = ?'); params.push((upc == null ? '' : String(upc)).trim() || null); }
