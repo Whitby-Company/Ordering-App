@@ -266,6 +266,13 @@ if (!orderColumns.includes('ready_for_import')) {
 
 // Small key/value table for one-time migrations / flags.
 db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)');
+db.exec(`CREATE TABLE IF NOT EXISTS saved_reports (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'item-sales',
+  config TEXT NOT NULL,
+  created_at TEXT
+)`);
 
 // Invoice numbering: invoice # = order.id + invoice_offset. Default keeps the
 // historical +30000 behavior until an admin sets a starting number.
