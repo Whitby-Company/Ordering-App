@@ -162,6 +162,15 @@ router.patch('/:id', (req, res) => {
       (typeof reason === 'string' && reason.trim()) ? reason.trim() : null,
       new Date().toISOString()
     );
+    // Also set a dated BASELINE as of today so the edit STICKS (the date-based
+    // model computes on-hand from the latest baseline — without this, the next
+    // order recalculation would overwrite a direct stock edit). Editing stock =
+    // "on hand is now this", i.e. a physical count as of today.
+    const today = new Date().toISOString().slice(0, 10);
+    db.prepare('INSERT INTO stock_baseline (item_id, count, as_of_date, created_by, created_at) VALUES (?, ?, ?, ?, ?)')
+      .run(req.params.id, Number(stock), today,
+        (typeof changedBy === 'string' && changedBy.trim()) ? changedBy.trim() : 'Stock edit',
+        new Date().toISOString());
   }
 
   const result = { id: req.params.id };
