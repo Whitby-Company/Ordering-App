@@ -312,21 +312,20 @@ function setInvoiceFloor(n) {
 function nextInvoiceNumber(excludeOrderId = null) {
   const floor = getInvoiceFloor();
   const offset = getInvoiceOffset();
-  // Every submitted order's EFFECTIVE number is in use: the explicit
-  // invoice_number if set, otherwise id + offset. Both must be excluded so a new
-  // number never collides with an offset-based order that has no explicit number.
+  // Invoice numbers always go UP: the next number is one above the highest
+  // effective number in use (explicit invoice_number, or id + offset), and never
+  // below the floor. Gaps (from voids/renumbers) are NOT refilled — a new
+  // invoice never gets a lower number than an existing one.
   const rows = db.prepare(
     "SELECT id, invoice_number AS inv FROM orders WHERE status != 'pending'"
   ).all();
-  const used = new Set();
+  let maxUsed = floor - 1;
   for (const r of rows) {
     if (excludeOrderId != null && r.id === excludeOrderId) continue;
     const eff = (r.inv != null && r.inv !== '') ? Number(r.inv) : (r.id + offset);
-    used.add(eff);
+    if (Number.isFinite(eff) && eff > maxUsed) maxUsed = eff;
   }
-  let n = floor;
-  while (used.has(n)) n++;
-  return n;
+  return maxUsed + 1;
 }
 
 // Per-store catalog overrides. present=1 -> add this item to the store's
