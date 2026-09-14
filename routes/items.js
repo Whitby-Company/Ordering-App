@@ -465,6 +465,13 @@ router.get('/export-inventory', (req, res) => {
   res.send(lines.join('\n'));
 });
 
+// POST /api/items/resync-stock — set the stored `stock` field = computed on-hand
+// for every item, so the plain Stock column and the computed on-hand never drift.
+router.post('/resync-stock', (req, res) => {
+  db.syncStock(); // syncs all items' stored stock to computed on-hand
+  res.json({ ok: true });
+});
+
 // POST /api/items/rebaseline-to-stock — CLEAN RESET of the date-based model.
 // Sets every item's baseline = its current stored `stock`, dated today. Because
 // the baseline date is today, computeStock returns exactly the stored stock as
