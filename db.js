@@ -250,6 +250,9 @@ if (!orderColumns.includes('po_number')) {
 if (!orderColumns.includes('invoice_number')) {
   db.exec('ALTER TABLE orders ADD COLUMN invoice_number INTEGER');
 }
+if (!orderColumns.includes('voided')) {
+  db.exec('ALTER TABLE orders ADD COLUMN voided INTEGER NOT NULL DEFAULT 0');
+}
 // Whether this order has been exported to QuickBooks (batched import).
 if (!orderColumns.includes('exported')) {
   db.exec('ALTER TABLE orders ADD COLUMN exported INTEGER NOT NULL DEFAULT 0');
@@ -277,6 +280,33 @@ function setInvoiceStart(nextNumber) {
   const offset = Number(nextNumber) - nextId;
   db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('invoice_offset', ?)").run(String(offset));
   return { offset, nextId, nextNumber: Number(nextNumber) };
+}
+
+// The invoice-number FLOOR — the lowest number the sequence starts from.
+function getInvoiceFloor() {
+  const row = db.prepare("SELECT value FROM meta WHERE key = 'invoice_floor'").get();
+  return row ? Number(row.value) : 26000;
+}
+function setInvoiceFloor(n) {
+  db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('invoice_floor', ?)").run(String(Number(n)));
+  return getInvoiceFloor();
+}
+
+// Next available invoice number = the lowest number at/above the floor that no
+// submitted order currently uses. This fills gaps left when a number is freed
+// (e.g. an order's number was changed to something lower), so numbers stay
+// contiguous with no skips. Excludes a given order id (for re-assignment).
+function nextInvoiceNumber(excludeOrderId = null) {
+  const floor = getInvoiceFloor();
+  // All explicit invoice numbers currently in use by submitted orders.
+  const rows = db.prepare(
+    "SELECT id, invoice_number AS inv FROM orders WHERE status != 'pending' AND invoice_number IS NOT NULL AND invoice_number != ''"
+  ).all();
+  const used = new Set();
+  for (const r of rows) { if (excludeOrderId != null && r.id === excludeOrderId) continue; used.add(Number(r.inv)); }
+  let n = floor;
+  while (used.has(n)) n++;
+  return n;
 }
 
 // Per-store catalog overrides. present=1 -> add this item to the store's
@@ -410,6 +440,9 @@ module.exports.applyShipToSeed = applyShipToSeed;
 module.exports.seedCatalogOnce = seedCatalogOnce;
 module.exports.getInvoiceOffset = getInvoiceOffset;
 module.exports.setInvoiceStart = setInvoiceStart;
+module.exports.getInvoiceFloor = getInvoiceFloor;
+module.exports.setInvoiceFloor = setInvoiceFloor;
+module.exports.nextInvoiceNumber = nextInvoiceNumber;
 
 // ---- Date-based stock model ----
 // Compute on-hand and available stock for items from the latest physical-count

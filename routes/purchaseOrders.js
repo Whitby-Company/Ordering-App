@@ -89,6 +89,8 @@ router.post('/', (req, res) => {
     const r = insPO.run(supplier || null, reference || null, orderDate || null, expectedDate || null, notes || null, now);
     id = r.lastInsertRowid;
     for (const l of lines) {
+      // qty_ordered is stored in inventory BOXES. The uploader already converts
+      // cases → boxes (× case_size) before sending, so use qty directly.
       const qty = Number(l.qty) || 0;
       if (!l.itemId || qty <= 0) continue;
       insLine.run(id, l.itemId, qty);
@@ -144,8 +146,6 @@ router.post('/:id/receive', (req, res) => {
   const receipts = (req.body && req.body.all)
     ? lines.map(l => ({ itemId: l.item_id, qty: l.qty_ordered - l.qty_received })).filter(r => r.qty > 0)
     : ((req.body && req.body.receipts) || []);
-  // Received date — the physical date stock arrived (drives on-hand as of that
-  // date). Defaults to today; can be back-dated.
   const receivedDate = /^\d{4}-\d{2}-\d{2}$/.test((req.body && req.body.receivedDate) || '') ? req.body.receivedDate : new Date().toISOString().slice(0, 10);
 
   const setRecv = db.prepare('UPDATE po_lines SET qty_received = qty_received + ?, received_date = ? WHERE id = ?');
@@ -158,6 +158,7 @@ router.post('/:id/receive', (req, res) => {
   const tx = db.transaction(() => {
     for (const r of receipts) {
       const line = byItem.get(r.itemId);
+      // qty is in inventory BOXES (the UI converts cases → boxes before sending).
       const qty = Number(r.qty) || 0;
       if (!line || qty <= 0) continue;
       const remaining = line.qty_ordered - line.qty_received;

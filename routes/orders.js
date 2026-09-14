@@ -10,7 +10,7 @@ router.get('/', (req, res) => {
   const orders = db
     .prepare(
       `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
-              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport, o.edited_at as editedAt, o.custom_status as customStatus,
+              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport, o.edited_at as editedAt, o.custom_status as customStatus, o.voided,
               c.id as customerId, c.name as customer
        FROM orders o
        JOIN customers c ON c.id = o.customer_id
@@ -43,7 +43,7 @@ function fetchOrdersForIIF(ids) {
   );
   const orderStmt = db.prepare(
     `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
-              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport, o.edited_at as editedAt, o.custom_status as customStatus,
+              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport, o.edited_at as editedAt, o.custom_status as customStatus, o.voided,
             c.name as customer, c.abbreviation as abbreviation, c.short_name as shortName,
             c.shipto_line1 as shipToLine1, c.shipto_line2 as shipToLine2, c.shipto_city as shipToCity,
             c.shipto_state as shipToState, c.shipto_zip as shipToZip, c.shipto_phone as shipToPhone
@@ -162,7 +162,7 @@ router.patch('/:id/processed', (req, res) => {
 
   const updated = db.prepare(
     `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
-            o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport, o.edited_at as editedAt, o.custom_status as customStatus,
+            o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport, o.edited_at as editedAt, o.custom_status as customStatus, o.voided,
             c.id as customerId, c.name as customer
      FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = ?`
   ).get(id);
@@ -186,15 +186,19 @@ router.patch('/:id/submit', (req, res) => {
   // Stock is computed from baselines + dated movements; just mark submitted,
   // then sync the cached on-hand for the affected items.
   const submittedAt = new Date().toISOString();
+  // Assign the next available invoice number if this order doesn't have one yet.
+  const cur = db.prepare('SELECT invoice_number AS inv FROM orders WHERE id = ?').get(id);
+  const assignInv = (cur && cur.inv != null && cur.inv !== '') ? null : db.nextInvoiceNumber(id);
   const run = db.transaction(() => {
-    db.prepare("UPDATE orders SET status = 'submitted', submitted_at = ? WHERE id = ?").run(submittedAt, id);
+    if (assignInv != null) db.prepare("UPDATE orders SET status = 'submitted', submitted_at = ?, invoice_number = ? WHERE id = ?").run(submittedAt, assignInv, id);
+    else db.prepare("UPDATE orders SET status = 'submitted', submitted_at = ? WHERE id = ?").run(submittedAt, id);
   });
   run();
   db.syncStock(lines.map(l => l.item_id));
 
   const updated = db.prepare(
     `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
-            o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport, o.edited_at as editedAt, o.custom_status as customStatus,
+            o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport, o.edited_at as editedAt, o.custom_status as customStatus, o.voided,
             c.id as customerId, c.name as customer
      FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = ?`
   ).get(id);
@@ -261,7 +265,10 @@ router.post('/', (req, res) => {
 
   const cleanPo = (typeof req.body.poNumber === 'string' && req.body.poNumber.trim()) ? req.body.poNumber.trim() : null;
   const invNum = Number(req.body.invoiceNumber);
-  const cleanInv = Number.isFinite(invNum) && invNum > 0 ? Math.round(invNum) : null;
+  // Explicit number if given; otherwise, for a SUBMITTED order, assign the next
+  // available number (lowest unused at/above the floor — fills gaps, no skips).
+  let cleanInv = Number.isFinite(invNum) && invNum > 0 ? Math.round(invNum) : null;
+  if (cleanInv == null && !isPending) cleanInv = db.nextInvoiceNumber();
   const createOrder = db.transaction(() => {
     const orderInfo = insertOrder.run(customerId, deliveryDate, submittedAt, cleanNotes, cleanSubmittedBy, status, cleanPo, cleanInv);
     const orderId = orderInfo.lastInsertRowid;
@@ -404,7 +411,7 @@ router.patch('/:id', (req, res) => {
 
   const updated = db.prepare(
     `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
-              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport, o.edited_at as editedAt, o.custom_status as customStatus,
+              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport, o.edited_at as editedAt, o.custom_status as customStatus, o.voided,
             c.id as customerId, c.name as customer
      FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = ?`
   ).get(orderId);
@@ -417,6 +424,25 @@ router.patch('/:id', (req, res) => {
 });
 
 // DELETE /api/orders/:id — cancel an order and return its reserved stock
+// POST /api/orders/:id/void — void an order: keep the invoice + record, force
+// its total to $0 (zero all line prices), mark it VOID, and release its stock.
+// The invoice number stays (no gap). Not easily reversible.
+router.post('/:id/void', (req, res) => {
+  const orderId = Number(req.params.id);
+  const order = db.prepare('SELECT id, status FROM orders WHERE id = ?').get(orderId);
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+  const lines = db.prepare('SELECT item_id FROM order_lines WHERE order_id = ?').all(orderId);
+  const run = db.transaction(() => {
+    // Zero every line's price so the invoice total is $0, and set qty 0 so it
+    // consumes no stock, but keep the lines/record for the audit trail.
+    db.prepare('UPDATE order_lines SET price = 0, qty = 0 WHERE order_id = ?').run(orderId);
+    db.prepare("UPDATE orders SET voided = 1, custom_status = 'VOID', edited_at = ? WHERE id = ?").run(new Date().toISOString(), orderId);
+  });
+  run();
+  db.syncStock(lines.map(l => l.item_id)); // returns the stock it had held
+  res.json({ ok: true, id: orderId, voided: true });
+});
+
 router.delete('/:id', (req, res) => {
   const orderId = req.params.id;
   const order = db.prepare('SELECT id, status FROM orders WHERE id = ?').get(orderId);
