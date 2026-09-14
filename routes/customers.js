@@ -250,6 +250,21 @@ router.put('/:id/catalog/items', (req, res) => {
   res.json(effectiveCatalogIds(cid));
 });
 
+// POST /api/customers/catalog/bulk-add — add item(s) to MULTIPLE customers'
+// catalogs at once. body: { itemIds: [...], customerIds: [...] }.
+router.post('/catalog/bulk-add', (req, res) => {
+  const itemIds = Array.isArray(req.body && req.body.itemIds) ? req.body.itemIds : [];
+  const customerIds = Array.isArray(req.body && req.body.customerIds) ? req.body.customerIds.map(Number) : [];
+  if (!itemIds.length || !customerIds.length) return res.status(400).json({ error: 'Provide itemIds and customerIds' });
+  const up = db.prepare('INSERT INTO customer_catalog (customer_id, item_id, present) VALUES (?,?,?) ON CONFLICT(customer_id, item_id) DO UPDATE SET present = excluded.present');
+  let added = 0;
+  const tx = db.transaction(() => {
+    for (const cid of customerIds) for (const iid of itemIds) { up.run(cid, iid, 1); added++; }
+  });
+  tx();
+  res.json({ ok: true, customers: customerIds.length, items: itemIds.length, added });
+});
+
 // POST /api/customers/apply-catalogs — load the QuickBooks-derived per-store
 // catalogs + prices. For each matched customer: catalog_on=1, include_default=0,
 // and add each matched item as an override with a per-each price (converted from
