@@ -566,16 +566,19 @@ router.post('/inventory-redo', (req, res) => {
     const boxes = (Number(l.qty) || 0) * (l.unit === 'case' ? cs : 1);
     consumed[l.itemId] = (consumed[l.itemId] || 0) + boxes;
   }
-  // 2. Positive stock-log changes AFTER the start date. Only count REAL PO
-  // receipts (reason like "Received PO ...") — NOT manual edits/resets (e.g.
-  // setting everything to 100), which would wrongly inflate the result.
+  // 2. PO receipts AFTER the start date, from the actual received quantities on
+  // po_lines (received_date > startDate). This is the true source — the PO
+  // receiving flow records qty_received + received_date. (We no longer rely on
+  // stock-log deltas, which are 0 under the computed-stock model.)
   const received = {};
-  const logs = db.prepare(
-    `SELECT item_id AS itemId, delta, reason FROM stock_log
-      WHERE delta > 0 AND substr(changed_at, 1, 10) > ?
-        AND reason LIKE 'Received PO%'`
+  const recvRows = db.prepare(
+    `SELECT pl.item_id AS itemId, SUM(pl.qty_received) AS qty
+       FROM po_lines pl JOIN purchase_orders po ON po.id = pl.po_id
+      WHERE pl.qty_received > 0 AND pl.received_date IS NOT NULL
+        AND pl.received_date > ? AND po.status != 'cancelled'
+      GROUP BY pl.item_id`
   ).all(startDate);
-  for (const l of logs) received[l.itemId] = (received[l.itemId] || 0) + l.delta;
+  for (const r of recvRows) received[r.itemId] = (received[r.itemId] || 0) + (Number(r.qty) || 0);
 
   // 3. For every item, correct = start − consumed + received. Compare to current.
   const items = db.prepare('SELECT id, name, stock FROM items').all();
