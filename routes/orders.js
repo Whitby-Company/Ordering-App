@@ -10,7 +10,7 @@ router.get('/', (req, res) => {
   const orders = db
     .prepare(
       `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
-              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport, o.edited_at as editedAt, o.custom_status as customStatus, o.voided, o.taiyo_dropped_at as taiyoDroppedAt,
+              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport, o.edited_at as editedAt, o.custom_status as customStatus, o.voided, o.taiyo_dropped_at as taiyoDroppedAt, o.taiyo_stored as taiyoStored,
               c.id as customerId, c.name as customer
        FROM orders o
        JOIN customers c ON c.id = o.customer_id
@@ -43,7 +43,7 @@ function fetchOrdersForIIF(ids) {
   );
   const orderStmt = db.prepare(
     `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
-              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport, o.edited_at as editedAt, o.custom_status as customStatus, o.voided, o.taiyo_dropped_at as taiyoDroppedAt,
+              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport, o.edited_at as editedAt, o.custom_status as customStatus, o.voided, o.taiyo_dropped_at as taiyoDroppedAt, o.taiyo_stored as taiyoStored,
             c.name as customer, c.abbreviation as abbreviation, c.short_name as shortName,
             c.shipto_line1 as shipToLine1, c.shipto_line2 as shipToLine2, c.shipto_city as shipToCity,
             c.shipto_state as shipToState, c.shipto_zip as shipToZip, c.shipto_phone as shipToPhone
@@ -162,7 +162,7 @@ router.patch('/:id/processed', (req, res) => {
 
   const updated = db.prepare(
     `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
-            o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport, o.edited_at as editedAt, o.custom_status as customStatus, o.voided, o.taiyo_dropped_at as taiyoDroppedAt,
+            o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport, o.edited_at as editedAt, o.custom_status as customStatus, o.voided, o.taiyo_dropped_at as taiyoDroppedAt, o.taiyo_stored as taiyoStored,
             c.id as customerId, c.name as customer
      FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = ?`
   ).get(id);
@@ -198,7 +198,7 @@ router.patch('/:id/submit', (req, res) => {
 
   const updated = db.prepare(
     `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
-            o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport, o.edited_at as editedAt, o.custom_status as customStatus, o.voided, o.taiyo_dropped_at as taiyoDroppedAt,
+            o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport, o.edited_at as editedAt, o.custom_status as customStatus, o.voided, o.taiyo_dropped_at as taiyoDroppedAt, o.taiyo_stored as taiyoStored,
             c.id as customerId, c.name as customer
      FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = ?`
   ).get(id);
@@ -434,7 +434,7 @@ router.patch('/:id', (req, res) => {
 
   const updated = db.prepare(
     `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
-              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport, o.edited_at as editedAt, o.custom_status as customStatus, o.voided, o.taiyo_dropped_at as taiyoDroppedAt,
+              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport, o.edited_at as editedAt, o.custom_status as customStatus, o.voided, o.taiyo_dropped_at as taiyoDroppedAt, o.taiyo_stored as taiyoStored,
             c.id as customerId, c.name as customer
      FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = ?`
   ).get(orderId);
@@ -450,6 +450,16 @@ router.patch('/:id', (req, res) => {
 // POST /api/orders/:id/void — void an order: keep the invoice + record, force
 // its total to $0 (zero all line prices), mark it VOID, and release its stock.
 // The invoice number stays (no gap). Not easily reversible.
+// POST /api/orders/:id/taiyo-stored — move to (or out of) Taiyo Storage.
+// Body: { stored: true|false }.
+router.post('/:id/taiyo-stored', (req, res) => {
+  const id = Number(req.params.id);
+  const stored = (req.body && req.body.stored) ? 1 : 0;
+  const info = db.prepare('UPDATE orders SET taiyo_stored = ? WHERE id = ?').run(stored, id);
+  if (info.changes === 0) return res.status(404).json({ error: 'Order not found' });
+  res.json({ ok: true, id, taiyoStored: !!stored });
+});
+
 // POST /api/orders/:id/taiyo-dropped — record that the Taiyo PDF was dropped now.
 router.post('/:id/taiyo-dropped', (req, res) => {
   const id = Number(req.params.id);

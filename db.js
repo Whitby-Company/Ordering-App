@@ -263,6 +263,11 @@ if (!orderColumns.includes('voided')) {
 if (!orderColumns.includes('taiyo_dropped_at')) {
   db.exec('ALTER TABLE orders ADD COLUMN taiyo_dropped_at TEXT');
 }
+// Whether this invoice has been moved to "Taiyo Storage" (archived from the
+// Taiyo page's Current list after printing).
+if (!orderColumns.includes('taiyo_stored')) {
+  db.exec('ALTER TABLE orders ADD COLUMN taiyo_stored INTEGER NOT NULL DEFAULT 0');
+}
 // Whether this order has been exported to QuickBooks (batched import).
 if (!orderColumns.includes('exported')) {
   db.exec('ALTER TABLE orders ADD COLUMN exported INTEGER NOT NULL DEFAULT 0');
