@@ -190,8 +190,8 @@ router.patch('/:id/submit', (req, res) => {
   const cur = db.prepare('SELECT invoice_number AS inv FROM orders WHERE id = ?').get(id);
   const assignInv = (cur && cur.inv != null && cur.inv !== '') ? null : db.nextInvoiceNumber(id);
   const run = db.transaction(() => {
-    if (assignInv != null) db.prepare("UPDATE orders SET status = 'submitted', submitted_at = ?, invoice_number = ? WHERE id = ?").run(submittedAt, assignInv, id);
-    else db.prepare("UPDATE orders SET status = 'submitted', submitted_at = ? WHERE id = ?").run(submittedAt, id);
+    if (assignInv != null) db.prepare("UPDATE orders SET status = 'submitted', submitted_at = ?, invoice_number = ?, ready_for_import = 1 WHERE id = ?").run(submittedAt, assignInv, id);
+    else db.prepare("UPDATE orders SET status = 'submitted', submitted_at = ?, ready_for_import = 1 WHERE id = ?").run(submittedAt, id);
   });
   run();
   db.syncStock(lines.map(l => l.item_id));
@@ -255,7 +255,7 @@ router.post('/', (req, res) => {
   }
 
   const insertOrder = db.prepare(
-    'INSERT INTO orders (customer_id, delivery_date, submitted_at, notes, submitted_by, status, po_number, invoice_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO orders (customer_id, delivery_date, submitted_at, notes, submitted_by, status, po_number, invoice_number, ready_for_import) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
   );
   const insertLine = db.prepare('INSERT INTO order_lines (order_id, item_id, qty, price, unit, pack) VALUES (?, ?, ?, ?, ?, ?)');
 
@@ -293,7 +293,7 @@ router.post('/', (req, res) => {
   let cleanInv = Number.isFinite(invNum) && invNum > 0 ? Math.round(invNum) : null;
   if (cleanInv == null && !isPending) cleanInv = db.nextInvoiceNumber();
   const createOrder = db.transaction(() => {
-    const orderInfo = insertOrder.run(customerId, deliveryDate, submittedAt, cleanNotes, cleanSubmittedBy, status, cleanPo, cleanInv);
+    const orderInfo = insertOrder.run(customerId, deliveryDate, submittedAt, cleanNotes, cleanSubmittedBy, status, cleanPo, cleanInv, isPending ? 0 : 1);
     const orderId = orderInfo.lastInsertRowid;
     for (const { item, qty, unit, pack, price } of resolvedLines) {
       insertLine.run(orderId, item.id, qty, price, unit, pack);
