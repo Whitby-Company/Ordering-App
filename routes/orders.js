@@ -20,7 +20,7 @@ router.get('/', (req, res) => {
     .all();
 
   const lineStmt = db.prepare(
-    `SELECT ol.item_id as id, i.name, i.brand, COALESCE(ol.price, i.price) as price, COALESCE(ol.pack, i.pack) as pack, ol.unit, i.upc, ol.qty
+    `SELECT ol.item_id as id, i.name, i.brand, COALESCE(ol.price, i.price) as price, COALESCE(ol.pack, i.pack) as pack, ol.unit, i.upc, ol.qty, ol.requested_qty as requestedQty
      FROM order_lines ol
      JOIN items i ON i.id = ol.item_id
      WHERE ol.order_id = ?`
@@ -264,6 +264,11 @@ router.post('/', (req, res) => {
     if (!item) return res.status(404).json({ error: `Item "${line.itemId}" not found` });
     const qty = Number(line.qty);
     if (!Number.isFinite(qty) || qty < 0) return res.status(400).json({ error: `Invalid quantity for "${item.name}"` });
+    // The amount actually wanted, when different from what's shipping (e.g.
+    // mobile capped the line to what's available) — only stored when it
+    // genuinely differs, so a normal fully-available line stays untouched.
+    const reqQtyRaw = Number(line.requestedQty);
+    const requestedQty = (Number.isFinite(reqQtyRaw) && reqQtyRaw !== qty) ? reqQtyRaw : null;
     // Ordering unit: explicit on the line, else the store's catalog default, else box.
     const cat = custUnitStmt.get(customerId, item.id);
     let unit = (line.unit === 'case' || line.unit === 'box') ? line.unit : (cat && cat.unit ? cat.unit : 'box');
@@ -284,13 +289,13 @@ router.post('/', (req, res) => {
     // are placed for future delivery when the item will be back in stock, so the
     // real price must be charged (no auto-$0).
     // Stock is tracked in eaches at the box level; qty of this unit uses `pack` eaches.
-    resolvedLines.push({ item, qty, unit, pack, price });
+    resolvedLines.push({ item, qty, requestedQty, unit, pack, price });
   }
 
   const insertOrder = db.prepare(
     'INSERT INTO orders (customer_id, delivery_date, submitted_at, notes, submitted_by, status, po_number, invoice_number, ready_for_import) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
   );
-  const insertLine = db.prepare('INSERT INTO order_lines (order_id, item_id, qty, price, unit, pack) VALUES (?, ?, ?, ?, ?, ?)');
+  const insertLine = db.prepare('INSERT INTO order_lines (order_id, item_id, qty, requested_qty, price, unit, pack) VALUES (?, ?, ?, ?, ?, ?, ?)');
 
   const submittedAt = new Date().toISOString();
   const cleanNotes = (typeof notes === 'string' && notes.trim()) ? notes.trim() : null;
@@ -334,8 +339,8 @@ router.post('/', (req, res) => {
   const createOrder = db.transaction(() => {
     const orderInfo = insertOrder.run(customerId, deliveryDate, submittedAt, cleanNotes, cleanSubmittedBy, status, cleanPo, cleanInv, isPending ? 0 : 1);
     const orderId = orderInfo.lastInsertRowid;
-    for (const { item, qty, unit, pack, price } of resolvedLines) {
-      insertLine.run(orderId, item.id, qty, price, unit, pack);
+    for (const { item, qty, requestedQty, unit, pack, price } of resolvedLines) {
+      insertLine.run(orderId, item.id, qty, requestedQty, price, unit, pack);
     }
     return orderId;
   });
@@ -353,7 +358,7 @@ router.post('/', (req, res) => {
     submittedBy: cleanSubmittedBy,
     status,
     notes: cleanNotes,
-    lines: resolvedLines.map(({ item, qty, price, unit, pack }) => ({ id: item.id, name: item.name, brand: item.brand, price, pack, unit, qty })),
+    lines: resolvedLines.map(({ item, qty, requestedQty, price, unit, pack }) => ({ id: item.id, name: item.name, brand: item.brand, price, pack, unit, qty, requestedQty })),
   });
 });
 
@@ -455,11 +460,17 @@ router.patch('/:id', (req, res) => {
     if (line.price != null && Number.isFinite(Number(line.price))) price = Number(line.price);
     else if (cat && cat.price != null) price = cat.price;
     else price = unit === 'case' ? (item.case_price != null ? item.case_price : item.price) : item.price;
+    // Preserve what was originally requested when an existing line doesn't
+    // change what it's asking for (e.g. the office bumping the shippable qty
+    // up as more stock arrives shouldn't erase the original ask). Only a
+    // client that explicitly sends requestedQty overrides it.
+    const reqQtyRaw = Number(line.requestedQty);
+    const requestedQty = (Number.isFinite(reqQtyRaw) && reqQtyRaw !== qty) ? reqQtyRaw : null;
     // No auto-$0 for out-of-stock — keep the real price (future-dated orders).
     // Stock is in boxes; a case line consumes qty × case_size boxes.
     const boxes = qty * (unit === 'case' ? (item.case_size || 1) : 1);
     newBoxesByItem[line.itemId] = (newBoxesByItem[line.itemId] || 0) + boxes;
-    resolvedLines.push({ item, qty, unit, pack, price });
+    resolvedLines.push({ item, qty, requestedQty, unit, pack, price });
   }
 
   // Only items whose quantity is INCREASING need a stock check — the
@@ -469,13 +480,13 @@ router.patch('/:id', (req, res) => {
   // Stock may go negative (orders placed before restock), so no cap on edits.
 
   const deleteLines = db.prepare('DELETE FROM order_lines WHERE order_id = ?');
-  const insertLine = db.prepare('INSERT INTO order_lines (order_id, item_id, qty, price, unit, pack) VALUES (?, ?, ?, ?, ?, ?)');
+  const insertLine = db.prepare('INSERT INTO order_lines (order_id, item_id, qty, requested_qty, price, unit, pack) VALUES (?, ?, ?, ?, ?, ?, ?)');
   const updateOrder = db.prepare('UPDATE orders SET customer_id = ?, delivery_date = ?, notes = ?, edited_at = ?, processed = 0, processed_at = NULL WHERE id = ?');
 
   const cleanNotes = (typeof notes === 'string' && notes.trim()) ? notes.trim() : null;
   const run = db.transaction(() => {
     deleteLines.run(orderId);
-    for (const { item, qty, unit, pack, price } of resolvedLines) insertLine.run(orderId, item.id, qty, price, unit, pack);
+    for (const { item, qty, requestedQty, unit, pack, price } of resolvedLines) insertLine.run(orderId, item.id, qty, requestedQty, price, unit, pack);
     updateOrder.run(customerId, deliveryDate, cleanNotes, new Date().toISOString(), orderId);
   });
   run();
@@ -489,7 +500,7 @@ router.patch('/:id', (req, res) => {
      FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = ?`
   ).get(orderId);
   const newLines = db.prepare(
-    `SELECT ol.item_id as id, i.name, i.brand, COALESCE(ol.price, i.price) as price, COALESCE(ol.pack, i.pack) as pack, ol.unit, i.upc, ol.qty
+    `SELECT ol.item_id as id, i.name, i.brand, COALESCE(ol.price, i.price) as price, COALESCE(ol.pack, i.pack) as pack, ol.unit, i.upc, ol.qty, ol.requested_qty as requestedQty
      FROM order_lines ol JOIN items i ON i.id = ol.item_id WHERE ol.order_id = ?`
   ).all(orderId);
 

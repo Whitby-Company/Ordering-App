@@ -610,7 +610,7 @@ router.get('/:id/stock-log', (req, res) => {
       ORDER BY COALESCE(pl.received_date, po.expected_date, po.order_date) DESC`
   ).all(id);
   const baselines = db.prepare(
-    `SELECT count, as_of_date AS asOfDate, created_at AS createdAt
+    `SELECT count, as_of_date AS asOfDate, created_by AS createdBy, created_at AS createdAt
        FROM stock_baseline WHERE item_id = ? ORDER BY as_of_date DESC`
   ).all(id);
   res.json({ log, purchaseOrders: pos, baselines });

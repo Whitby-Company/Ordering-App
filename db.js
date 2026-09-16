@@ -224,6 +224,13 @@ if (!orderLineColumns.includes('unit')) {
 if (!orderLineColumns.includes('pack')) {
   db.exec('ALTER TABLE order_lines ADD COLUMN pack INTEGER');
 }
+// The amount actually requested by the customer/rep, when it differs from
+// `qty` (what will actually ship/be billed) — e.g. mobile ordered more than
+// was available and the line got capped to what's in stock. NULL means
+// "requested = qty", i.e. no shortfall.
+if (!orderLineColumns.includes('requested_qty')) {
+  db.exec('ALTER TABLE order_lines ADD COLUMN requested_qty INTEGER');
+}
 if (!orderColumns.includes('notes')) {
   db.exec('ALTER TABLE orders ADD COLUMN notes TEXT');
 }
