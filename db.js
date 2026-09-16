@@ -111,7 +111,7 @@ if (!itemColumns.includes('case_price')) {
 if (!itemColumns.includes('cost')) {
   db.exec('ALTER TABLE items ADD COLUMN cost REAL');
 }
-// Pure NET cost per each (before Taiyo's handling fee, before freight) — used
+// Pure NET cost per BOX (before Taiyo's handling fee, before freight) — used
 // to calculate what's owed to Taiyo (the warehouse partner) as a % handling
 // fee. Deliberately separate from `cost` above, which is already a blended
 // Net+Taiyo+freight landed figure that can't be decomposed back into its

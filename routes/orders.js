@@ -1387,7 +1387,7 @@ router.get('/taiyo-report', (req, res) => {
 });
 
 // GET /api/orders/taiyo-fee-report?from=YYYY-MM-DD&to=YYYY-MM-DD — what's owed
-// to Taiyo as a handling fee: 6% of the NET cost (item.net_cost, set
+// to Taiyo as a handling fee: 6% of the NET cost (item.net_cost, PER BOX, set
 // separately from the blended `cost` and from the unrelated per-case
 // `taiyo_cost` used by the other Taiyo report) of everything sold in the
 // range (by DELIVERY date), totaled per invoice. For now this applies to
@@ -1404,7 +1404,7 @@ router.get('/taiyo-fee-report', (req, res) => {
   const lines = db.prepare(
     `SELECT o.id AS orderId, o.invoice_number AS invoiceNumber, o.delivery_date AS deliveryDate,
             o.po_number AS poNumber, c.name AS customer,
-            ol.item_id AS itemId, ol.qty, ol.unit, COALESCE(ol.pack, i.pack) AS pack,
+            ol.item_id AS itemId, ol.qty, ol.unit, i.case_size AS caseSize,
             i.name AS itemName, i.brand, i.net_cost AS netCost
        FROM order_lines ol
        JOIN orders o ON o.id = ol.order_id
@@ -1422,13 +1422,15 @@ router.get('/taiyo-fee-report', (req, res) => {
       orderId: l.orderId, invoiceNumber: l.invoiceNumber, deliveryDate: l.deliveryDate,
       poNumber: l.poNumber, customer: l.customer, netCostTotal: 0, missingItems: [],
     });
-    const eaches = (Number(l.qty) || 0) * (Number(l.pack) || 1);
+    // net_cost is PER BOX -- a case line is qty x case_size boxes, a box line is qty boxes.
+    const cs = Number(l.caseSize) > 0 ? Number(l.caseSize) : 1;
+    const boxes = (Number(l.qty) || 0) * (l.unit === 'case' ? cs : 1);
     if (l.netCost == null) {
       inv.missingItems.push({ itemId: l.itemId, name: l.itemName });
       missingByItem[l.itemId] = { itemId: l.itemId, name: l.itemName, brand: l.brand };
       continue;
     }
-    const lineNetCost = eaches * Number(l.netCost);
+    const lineNetCost = boxes * Number(l.netCost);
     inv.netCostTotal += lineNetCost;
     grandNetCost += lineNetCost;
   }
