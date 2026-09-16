@@ -92,6 +92,59 @@ router.post('/', (req, res) => {
   }
 });
 
+// PATCH /api/items/:id/rename — change an item's SKU/item number (the part
+// after the brand prefix, e.g. "ACL:NIBB4OZ" -> "ACL:NIBB4OZ2"). The item id
+// is the primary key AND is referenced by item_id columns across several
+// other tables (orders, purchase orders, stock history, catalogs, print
+// order, import matching) with no FK cascade configured — so a rename has
+// to update every one of those in the same transaction, or those rows would
+// silently point at a SKU that no longer exists.
+// body: { code } — just the part after the brand prefix; the existing
+// prefix (whatever precedes the first ":") is kept as-is.
+router.patch('/:id/rename', (req, res) => {
+  const oldId = req.params.id;
+  const item = db.prepare('SELECT id FROM items WHERE id = ?').get(oldId);
+  if (!item) return res.status(404).json({ error: 'Item not found' });
+
+  const rawCode = (req.body && req.body.code != null) ? String(req.body.code).trim() : '';
+  if (!rawCode) return res.status(400).json({ error: 'Provide the new item number (code)' });
+
+  const colonIdx = oldId.indexOf(':');
+  const prefix = colonIdx >= 0 ? oldId.slice(0, colonIdx) : null;
+  const newId = prefix != null ? `${prefix}:${rawCode}` : rawCode;
+
+  if (newId === oldId) return res.json({ ok: true, id: newId, unchanged: true });
+
+  const clash = db.prepare('SELECT id FROM items WHERE id = ?').get(newId);
+  if (clash) return res.status(409).json({ error: `An item with SKU "${newId}" already exists` });
+
+  const tx = db.transaction(() => {
+    // FK enforcement is ON, so a straight sequential rename would violate a
+    // constraint mid-transaction (a child row briefly pointing at an id that
+    // doesn't exist yet, or the old id after items.id has already moved).
+    // Deferring checks until commit lets every table update in any order and
+    // only validates that everything lines up once it's all done.
+    db.pragma('defer_foreign_keys = ON');
+    db.prepare('UPDATE items SET id = ? WHERE id = ?').run(newId, oldId);
+    db.prepare('UPDATE order_lines SET item_id = ? WHERE item_id = ?').run(newId, oldId);
+    db.prepare('UPDATE po_lines SET item_id = ? WHERE item_id = ?').run(newId, oldId);
+    db.prepare('UPDATE stock_log SET item_id = ? WHERE item_id = ?').run(newId, oldId);
+    db.prepare('UPDATE stock_baseline SET item_id = ? WHERE item_id = ?').run(newId, oldId);
+    db.prepare('UPDATE customer_catalog SET item_id = ? WHERE item_id = ?').run(newId, oldId);
+    db.prepare('UPDATE import_map SET item_id = ? WHERE item_id = ?').run(newId, oldId);
+    // print_order.item_id is itself a primary key — drop any pre-existing
+    // (orphaned) row at the destination id first so the update can't collide.
+    db.prepare('DELETE FROM print_order WHERE item_id = ?').run(newId);
+    db.prepare('UPDATE print_order SET item_id = ? WHERE item_id = ?').run(newId, oldId);
+  });
+  try {
+    tx();
+  } catch (err) {
+    return res.status(500).json({ error: 'Rename failed: ' + (err.message || err) });
+  }
+  res.json({ ok: true, id: newId });
+});
+
 // PATCH /api/items/:id — edit stock, name, brand, pack, and/or toggle active
 // body: { stock?, name?, brand?, pack?, active? }
 // (Stock corrections here are for fixing mistakes — normal stock changes
