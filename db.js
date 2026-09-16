@@ -111,6 +111,15 @@ if (!itemColumns.includes('case_price')) {
 if (!itemColumns.includes('cost')) {
   db.exec('ALTER TABLE items ADD COLUMN cost REAL');
 }
+// Pure NET cost per each (before Taiyo's handling fee, before freight) — used
+// to calculate what's owed to Taiyo (the warehouse partner) as a % handling
+// fee. Deliberately separate from `cost` above, which is already a blended
+// Net+Taiyo+freight landed figure that can't be decomposed back into its
+// parts, and separate from `taiyo_cost` below, which is an unrelated
+// per-CASE figure for items Taiyo actually owns.
+if (!itemColumns.includes('net_cost')) {
+  db.exec('ALTER TABLE items ADD COLUMN net_cost REAL');
+}
 // Taiyo (warehouse partner) cost per CASE — for items Taiyo owns. When set (>0),
 // the item is treated as Taiyo-owned and appears in the Taiyo report, where we
 // owe Taiyo (cases sold × taiyo_cost).

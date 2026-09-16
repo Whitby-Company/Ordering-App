@@ -1386,4 +1386,66 @@ router.get('/taiyo-report', (req, res) => {
   res.json({ from, to, items: list, grandCases: Math.round(grandCases * 100) / 100, grandOwed: Math.round(grandOwed * 100) / 100 });
 });
 
+// GET /api/orders/taiyo-fee-report?from=YYYY-MM-DD&to=YYYY-MM-DD — what's owed
+// to Taiyo as a handling fee: 6% of the NET cost (item.net_cost, set
+// separately from the blended `cost` and from the unrelated per-case
+// `taiyo_cost` used by the other Taiyo report) of everything sold in the
+// range (by DELIVERY date), totaled per invoice. For now this applies to
+// every item on every invoice; items with no net_cost set yet are called out
+// separately rather than silently treated as $0, so gaps are visible.
+router.get('/taiyo-fee-report', (req, res) => {
+  const from = /^\d{4}-\d{2}-\d{2}$/.test(req.query.from || '') ? req.query.from : null;
+  const to = /^\d{4}-\d{2}-\d{2}$/.test(req.query.to || '') ? req.query.to : null;
+  const FEE_RATE = 0.06;
+  const clauses = ["o.status = 'submitted'", 'o.voided = 0'];
+  const params = [];
+  if (from) { clauses.push('o.delivery_date >= ?'); params.push(from); }
+  if (to) { clauses.push('o.delivery_date <= ?'); params.push(to); }
+  const lines = db.prepare(
+    `SELECT o.id AS orderId, o.invoice_number AS invoiceNumber, o.delivery_date AS deliveryDate,
+            o.po_number AS poNumber, c.name AS customer,
+            ol.item_id AS itemId, ol.qty, ol.unit, COALESCE(ol.pack, i.pack) AS pack,
+            i.name AS itemName, i.brand, i.net_cost AS netCost
+       FROM order_lines ol
+       JOIN orders o ON o.id = ol.order_id
+       JOIN customers c ON c.id = o.customer_id
+       JOIN items i ON i.id = ol.item_id
+      WHERE ${clauses.join(' AND ')} ORDER BY o.delivery_date, o.id`
+  ).all(...params);
+
+  const invoices = {};
+  const missingByItem = {};
+  let grandNetCost = 0;
+
+  for (const l of lines) {
+    const inv = invoices[l.orderId] || (invoices[l.orderId] = {
+      orderId: l.orderId, invoiceNumber: l.invoiceNumber, deliveryDate: l.deliveryDate,
+      poNumber: l.poNumber, customer: l.customer, netCostTotal: 0, missingItems: [],
+    });
+    const eaches = (Number(l.qty) || 0) * (Number(l.pack) || 1);
+    if (l.netCost == null) {
+      inv.missingItems.push({ itemId: l.itemId, name: l.itemName });
+      missingByItem[l.itemId] = { itemId: l.itemId, name: l.itemName, brand: l.brand };
+      continue;
+    }
+    const lineNetCost = eaches * Number(l.netCost);
+    inv.netCostTotal += lineNetCost;
+    grandNetCost += lineNetCost;
+  }
+
+  const invoiceList = Object.values(invoices).map(inv => ({
+    ...inv,
+    netCostTotal: Math.round(inv.netCostTotal * 100) / 100,
+    feeOwed: Math.round(inv.netCostTotal * FEE_RATE * 100) / 100,
+  })).sort((a, b) => (a.deliveryDate || '').localeCompare(b.deliveryDate || '') || a.orderId - b.orderId);
+
+  res.json({
+    from, to, feeRate: FEE_RATE,
+    invoices: invoiceList,
+    grandNetCost: Math.round(grandNetCost * 100) / 100,
+    grandFeeOwed: Math.round(grandNetCost * FEE_RATE * 100) / 100,
+    itemsMissingNetCost: Object.values(missingByItem).sort((a, b) => (a.brand || '').localeCompare(b.brand || '') || (a.name || '').localeCompare(b.name || '')),
+  });
+});
+
 module.exports = router;

@@ -13,7 +13,7 @@ const router = express.Router();
 // Optional query params: ?brand=Oberto  ?lowStockMax=5  ?includeInactive=true
 router.get('/', (req, res) => {
   const { brand, lowStockMax, includeInactive } = req.query;
-  let sql = 'SELECT id, brand, name, stock, price, pack, packLabel, imageUrl, upc, active, contains, is_default as isDefault, case_size as caseSize, case_price as casePrice, cost, taiyo_cost as taiyoCost, notes FROM items WHERE 1=1';
+  let sql = 'SELECT id, brand, name, stock, price, pack, packLabel, imageUrl, upc, active, contains, is_default as isDefault, case_size as caseSize, case_price as casePrice, cost, net_cost as netCost, taiyo_cost as taiyoCost, notes FROM items WHERE 1=1';
   const params = [];
 
   if (includeInactive !== 'true') {
@@ -150,8 +150,8 @@ router.patch('/:id/rename', (req, res) => {
 // (Stock corrections here are for fixing mistakes — normal stock changes
 // should happen via orders.)
 router.patch('/:id', (req, res) => {
-  const { stock, name, brand, pack, packLabel, imageUrl, upc, price, active, contains, isDefault, cost, notes, caseSize, taiyoCost, changedBy, reason } = req.body;
-  if (stock === undefined && name === undefined && brand === undefined && pack === undefined && packLabel === undefined && imageUrl === undefined && upc === undefined && price === undefined && active === undefined && contains === undefined && isDefault === undefined && cost === undefined && notes === undefined && caseSize === undefined) {
+  const { stock, name, brand, pack, packLabel, imageUrl, upc, price, active, contains, isDefault, cost, netCost, notes, caseSize, taiyoCost, changedBy, reason } = req.body;
+  if (stock === undefined && name === undefined && brand === undefined && pack === undefined && packLabel === undefined && imageUrl === undefined && upc === undefined && price === undefined && active === undefined && contains === undefined && isDefault === undefined && cost === undefined && netCost === undefined && notes === undefined && caseSize === undefined) {
     return res.status(400).json({ error: 'At least one field must be provided' });
   }
   if (stock !== undefined && Number.isNaN(Number(stock))) {
@@ -188,6 +188,7 @@ router.patch('/:id', (req, res) => {
   if (active !== undefined) { updates.push('active = ?'); params.push(active ? 1 : 0); }
   if (isDefault !== undefined) { updates.push('is_default = ?'); params.push(isDefault ? 1 : 0); }
   if (cost !== undefined) { updates.push('cost = ?'); params.push(cost === '' || cost === null ? null : Number(cost)); }
+  if (netCost !== undefined) { updates.push('net_cost = ?'); params.push(netCost === '' || netCost === null ? null : Number(netCost)); }
   if (notes !== undefined) { updates.push('notes = ?'); params.push((typeof notes === 'string' && notes.trim()) ? notes.trim() : null); }
   if (contains !== undefined) {
     // Normalize to an array of {qty, name, upc}; store as JSON (null if empty).
@@ -313,6 +314,30 @@ router.post('/bulk-update', (req, res) => {
   });
   run();
 
+  res.json({ updated, notFound, totalRows: updates.length });
+});
+
+// POST /api/items/bulk-net-cost — set the Taiyo net-cost (per each) for many
+// items at once, e.g. from a pricing sheet. body: { updates: [{ id, netCost }] }
+// Runs as a single transaction; unknown ids are reported back, not errored on.
+router.post('/bulk-net-cost', (req, res) => {
+  const { updates } = req.body;
+  if (!Array.isArray(updates) || updates.length === 0) {
+    return res.status(400).json({ error: 'updates must be a non-empty array' });
+  }
+  const getItem = db.prepare('SELECT id FROM items WHERE id = ?');
+  const updateNetCost = db.prepare('UPDATE items SET net_cost = ? WHERE id = ?');
+  const notFound = [];
+  let updated = 0;
+  const run = db.transaction(() => {
+    for (const u of updates) {
+      if (!u || !u.id) continue;
+      if (!getItem.get(u.id)) { notFound.push(u.id); continue; }
+      const hasNetCost = u.netCost !== undefined && u.netCost !== null && u.netCost !== '' && !Number.isNaN(Number(u.netCost));
+      if (hasNetCost) { updateNetCost.run(Number(u.netCost), u.id); updated++; }
+    }
+  });
+  run();
   res.json({ updated, notFound, totalRows: updates.length });
 });
 
