@@ -332,6 +332,17 @@ router.patch('/:id/custom-status', (req, res) => {
 // PATCH /api/orders/:id/invoice-number — set (or clear) an order's explicit
 // invoice number, to line it up with QuickBooks. Body: { invoiceNumber } (a
 // number, or null/'' to revert to the automatic id+offset number).
+// PATCH /api/orders/:id/po-number — change the PO number on an existing order.
+router.patch('/:id/po-number', (req, res) => {
+  const orderId = Number(req.params.id);
+  const order = db.prepare('SELECT id FROM orders WHERE id = ?').get(orderId);
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+  const raw = req.body ? req.body.poNumber : undefined;
+  const value = (typeof raw === 'string' && raw.trim()) ? raw.trim() : null;
+  db.prepare('UPDATE orders SET po_number = ? WHERE id = ?').run(value, orderId);
+  res.json({ ok: true, id: orderId, poNumber: value });
+});
+
 router.patch('/:id/invoice-number', (req, res) => {
   const orderId = Number(req.params.id);
   const order = db.prepare('SELECT id, status FROM orders WHERE id = ?').get(orderId);
