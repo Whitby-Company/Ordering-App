@@ -515,7 +515,7 @@ function computeStock(opts = {}) {
     const base = baseByItem[it.id];
     const baseDate = base ? base.asOf : null;
     const baseCount = base ? Number(base.count) : Number(it.stock) || 0;
-    let shippedSinceBase = 0;   // delivered in (baseDate, today]
+    let shippedSinceBase = 0;   // delivered in [baseDate, today]
     let futureBoxes = 0;        // delivered > today
     for (const l of orderLines) {
       if (l.itemId !== it.id) continue;
@@ -523,14 +523,14 @@ function computeStock(opts = {}) {
       const d = l.deliveryDate;
       if (!d) continue;
       if (d > today) futureBoxes += boxes;
-      else if (!baseDate || d > baseDate) shippedSinceBase += boxes;
+      else if (!baseDate || d >= baseDate) shippedSinceBase += boxes;
     }
     let receivedSinceBase = 0;
     for (const r of receipts) {
       if (r.itemId !== it.id) continue;
       const d = r.rd;
       if (!d) continue; // undated receipts don't affect the dated model
-      if (d <= today && (!baseDate || d > baseDate)) receivedSinceBase += Number(r.qty) || 0;
+      if (d <= today && (!baseDate || d >= baseDate)) receivedSinceBase += Number(r.qty) || 0;
     }
     const onHand = baseCount + receivedSinceBase - shippedSinceBase;
     const available = onHand - futureBoxes;
