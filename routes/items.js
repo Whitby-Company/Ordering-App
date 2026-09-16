@@ -590,7 +590,11 @@ router.post('/:id/baseline', (req, res) => {
 
 // GET /api/items/:id/stock-log — this item's stock-change history (physical
 // counts, PO receipts, manual edits, redo), newest first. Also returns any PO
-// lines received for this item so the UI can show incoming stock per item.
+// lines received for this item so the UI can show incoming stock per item,
+// and the item's real dated baselines (stock_baseline) so callers can tell
+// which log entries are an actual reset point for the on-hand calculation
+// (physical counts / direct stock edits) vs. ones that aren't (e.g. the
+// bulk "Inventory redo" tool only writes a log entry, not a baseline).
 router.get('/:id/stock-log', (req, res) => {
   const id = req.params.id;
   const log = db.prepare(
@@ -605,7 +609,11 @@ router.get('/:id/stock-log', (req, res) => {
       WHERE pl.item_id = ? AND po.status != 'cancelled'
       ORDER BY COALESCE(pl.received_date, po.expected_date, po.order_date) DESC`
   ).all(id);
-  res.json({ log, purchaseOrders: pos });
+  const baselines = db.prepare(
+    `SELECT count, as_of_date AS asOfDate, created_at AS createdAt
+       FROM stock_baseline WHERE item_id = ? ORDER BY as_of_date DESC`
+  ).all(id);
+  res.json({ log, purchaseOrders: pos, baselines });
 });
 
 // GET /api/items/:id/stock-check — reconcile an item's stock: current stored
