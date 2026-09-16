@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { buildIIF, buildIIFExperimental } = require('../iif');
 const { buildTP } = require('../tp');
+const { buildAutoPoBase } = require('../poNumber');
 
 const router = express.Router();
 
@@ -64,6 +65,26 @@ function brandAbbrevMap() {
   const map = {};
   for (const r of rows) if (r.abbreviation) map[r.brand] = r.abbreviation;
   return map;
+}
+
+// Auto PO# assigned once, right when an order becomes a real (submitted)
+// order — see poNumber.js for the exact format (including the Times special
+// case). If this store already has another submitted order for the same
+// delivery date, a -1, -2… suffix is appended so each invoice's PO# stays
+// unique. This value is saved to po_number immediately and is never
+// recomputed afterward — only an explicit edit (PATCH /:id/po-number) can
+// change it from then on.
+function buildAutoPoNumber(customerId, customerName, deliveryDate, submittedAt, abbreviation, excludeOrderId = null) {
+  const base = buildAutoPoBase(customerName, abbreviation, submittedAt);
+  if (!deliveryDate || !base) return base;
+  const rows = db.prepare(
+    "SELECT id, po_number FROM orders WHERE customer_id = ? AND delivery_date = ? AND status != 'pending' AND voided = 0"
+  ).all(customerId, deliveryDate).filter(r => r.id !== excludeOrderId);
+  if (rows.length === 0) return base;
+  const used = new Set(rows.map(r => (r.po_number || '').trim()));
+  let n = rows.length;
+  while (used.has(`${base}-${n}`)) n++;
+  return `${base}-${n}`;
 }
 
 router.get('/iif', (req, res) => {
@@ -187,11 +208,23 @@ router.patch('/:id/submit', (req, res) => {
   // then sync the cached on-hand for the affected items.
   const submittedAt = new Date().toISOString();
   // Assign the next available invoice number if this order doesn't have one yet.
-  const cur = db.prepare('SELECT invoice_number AS inv FROM orders WHERE id = ?').get(id);
+  const cur = db.prepare(
+    `SELECT o.invoice_number AS inv, o.po_number AS po, o.customer_id AS customerId, o.delivery_date AS deliveryDate, c.name AS customerName, c.abbreviation AS abbreviation
+     FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = ?`
+  ).get(id);
   const assignInv = (cur && cur.inv != null && cur.inv !== '') ? null : db.nextInvoiceNumber(id);
+  // Same idea for PO#: a pending draft has none yet, so assign the stable
+  // auto PO# now, once, at the moment it becomes a real order.
+  const assignPo = (cur && cur.po != null && cur.po !== '')
+    ? null
+    : buildAutoPoNumber(cur.customerId, cur.customerName, cur.deliveryDate, submittedAt, cur.abbreviation, id);
   const run = db.transaction(() => {
-    if (assignInv != null) db.prepare("UPDATE orders SET status = 'submitted', submitted_at = ?, invoice_number = ?, ready_for_import = 1 WHERE id = ?").run(submittedAt, assignInv, id);
-    else db.prepare("UPDATE orders SET status = 'submitted', submitted_at = ?, ready_for_import = 1 WHERE id = ?").run(submittedAt, id);
+    const sets = ["status = 'submitted'", 'submitted_at = ?', 'ready_for_import = 1'];
+    const params = [submittedAt];
+    if (assignInv != null) { sets.push('invoice_number = ?'); params.push(assignInv); }
+    if (assignPo != null) { sets.push('po_number = ?'); params.push(assignPo); }
+    params.push(id);
+    db.prepare(`UPDATE orders SET ${sets.join(', ')} WHERE id = ?`).run(...params);
   });
   run();
   db.syncStock(lines.map(l => l.item_id));
@@ -215,7 +248,7 @@ router.post('/', (req, res) => {
     return res.status(400).json({ error: 'customerId, deliveryDate, and at least one line are required' });
   }
 
-  const customer = db.prepare('SELECT id, name FROM customers WHERE id = ?').get(customerId);
+  const customer = db.prepare('SELECT id, name, abbreviation FROM customers WHERE id = ?').get(customerId);
   if (!customer) return res.status(404).json({ error: 'Customer not found' });
 
   const isPending = req.body.status === 'pending';
@@ -286,7 +319,13 @@ router.post('/', (req, res) => {
     }
   }
 
-  const cleanPo = (typeof req.body.poNumber === 'string' && req.body.poNumber.trim()) ? req.body.poNumber.trim() : null;
+  let cleanPo = (typeof req.body.poNumber === 'string' && req.body.poNumber.trim()) ? req.body.poNumber.trim() : null;
+  // No explicit PO given: assign the stable auto PO# right now, once, for a
+  // real (non-pending) order. It's saved immediately and won't change again
+  // unless someone explicitly edits it.
+  if (cleanPo == null && !isPending) {
+    cleanPo = buildAutoPoNumber(customerId, customer.name, deliveryDate, submittedAt, customer.abbreviation);
+  }
   const invNum = Number(req.body.invoiceNumber);
   // Explicit number if given; otherwise, for a SUBMITTED order, assign the next
   // available number (lowest unused at/above the floor — fills gaps, no skips).

@@ -59,22 +59,14 @@ function mapCustomer(appCustomerName) {
   return { qbName: name, memo: '', storeNum: '' };
 }
 
-// Build the PO number from the order-placed date and the customer.
-// Date format matches the user's convention: month + day + 2-digit year with
-// no leading zeros (Aug 12 2026 -> "81226"). Times orders append "TMS-<store#>"
-// (e.g. "81226TMS-18"); other customers get just the date.
+const { buildAutoPoBase } = require('./poNumber');
+
+// The order's saved PO number is authoritative. Older orders that predate
+// per-order PO# storage may not have one saved — for those only, fall back
+// to the same auto-generated value the order form would have shown.
 function buildPONumber(order) {
-  const m = String(order.submittedAt || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
-  let datePart = '';
-  if (m) {
-    const yy = m[1].slice(2);
-    const mm = String(parseInt(m[2], 10)); // no leading zero
-    const dd = String(parseInt(m[3], 10)); // no leading zero
-    datePart = `${mm}${dd}${yy}`;
-  }
-  const { qbName, storeNum } = mapCustomer(order.customer);
-  if (qbName === 'Times' && storeNum) return `${datePart}TMS-${storeNum}`;
-  return datePart;
+  if (order.poNumber && String(order.poNumber).trim()) return String(order.poNumber).trim();
+  return buildAutoPoBase(order.customer, order.abbreviation, order.submittedAt);
 }
 
 // IIF fields are tab-separated, so strip tabs/newlines from any value.

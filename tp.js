@@ -21,6 +21,7 @@
 // Quantity x Price = the correct line total — no unit-of-measure step needed.
 
 const { mapCustomer, formatIIFDate } = require('./iif');
+const { buildAutoPoBase } = require('./poNumber');
 
 // The full Transaction Pro invoice template header row, in order (reference).
 const TP_HEADERS = [
@@ -71,26 +72,10 @@ function rowFor(fields) {
   return TP_COLUMNS.map(h => csvCell(fields[h] ?? ''));
 }
 
-// Format an ISO date (yyyy-mm-dd) as MMDDYY for the PO number.
-function poDate(iso) {
-  if (!iso) return '';
-  const [y, m, d] = iso.split('-');
-  return `${m}${d}${y.slice(2)}`;
-}
-
 // Compose "City, State Zip" from an order's ship-to parts, skipping any blanks.
 function cityStateZip(order) {
   const cs = [order.shipToCity, order.shipToState].map(v => (v || '').trim()).filter(Boolean).join(', ');
   return [cs, (order.shipToZip || '').trim()].filter(Boolean).join(' ').trim();
-}
-
-// Today's date as ISO yyyy-mm-dd (used for the PO number = the invoice/export date).
-function todayISO() {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
 }
 
 // Build the full Transaction Pro CSV for one or more orders.
@@ -99,8 +84,6 @@ function todayISO() {
 // how TP's sample groups multiple lines into a single invoice by RefNumber.
 function buildTP(orders, brandAbbrev = {}, invoiceOffset = 0) {
   const lines = [TP_COLUMNS.join(',')];
-  // PO number uses the export date (when the invoice is being created).
-  const exportPoDate = poDate(todayISO());
 
   for (const order of orders) {
     const { qbName } = mapCustomer(order.customer);
@@ -113,11 +96,14 @@ function buildTP(orders, brandAbbrev = {}, invoiceOffset = 0) {
     const orderLines = [...positive, ...zeros];
     if (orderLines.length === 0) continue;
 
-    // PO Number = the order's custom po_number if set, else MMDDYY(export date)-<abbr>.
-    const abbr = (order.abbreviation || '').trim();
+    // PO Number: the order's saved po_number is authoritative. Older orders
+    // that predate per-order PO# storage may not have one saved — for those
+    // only, fall back to the same auto-generated value the order form
+    // would have shown.
     const shortName = (order.shortName || '').trim();
-    const autoPo = abbr ? `${exportPoDate}-${abbr}` : exportPoDate;
-    const poNumber = (order.poNumber && String(order.poNumber).trim()) ? String(order.poNumber).trim() : autoPo;
+    const poNumber = (order.poNumber && String(order.poNumber).trim())
+      ? String(order.poNumber).trim()
+      : buildAutoPoBase(order.customer, order.abbreviation, order.submittedAt);
     // In the memo the PO is labeled "PO#"; the PO Number column stays plain.
     const poForMemo = poNumber ? `PO# ${poNumber}` : '';
 
