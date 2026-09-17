@@ -151,7 +151,7 @@ router.patch('/:id/rename', (req, res) => {
 // should happen via orders.)
 router.patch('/:id', (req, res) => {
   const { stock, name, brand, pack, packLabel, imageUrl, upc, price, active, contains, isDefault, cost, netCost, notes, caseSize, taiyoCost, changedBy, reason } = req.body;
-  if (stock === undefined && name === undefined && brand === undefined && pack === undefined && packLabel === undefined && imageUrl === undefined && upc === undefined && price === undefined && active === undefined && contains === undefined && isDefault === undefined && cost === undefined && netCost === undefined && notes === undefined && caseSize === undefined) {
+  if (stock === undefined && name === undefined && brand === undefined && pack === undefined && packLabel === undefined && imageUrl === undefined && upc === undefined && price === undefined && active === undefined && contains === undefined && isDefault === undefined && cost === undefined && netCost === undefined && taiyoCost === undefined && notes === undefined && caseSize === undefined) {
     return res.status(400).json({ error: 'At least one field must be provided' });
   }
   if (stock !== undefined && Number.isNaN(Number(stock))) {
