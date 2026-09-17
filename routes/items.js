@@ -191,11 +191,15 @@ router.patch('/:id', (req, res) => {
   if (netCost !== undefined) { updates.push('net_cost = ?'); params.push(netCost === '' || netCost === null ? null : Number(netCost)); }
   if (notes !== undefined) { updates.push('notes = ?'); params.push((typeof notes === 'string' && notes.trim()) ? notes.trim() : null); }
   if (contains !== undefined) {
-    // Normalize to an array of {qty, name, upc}; store as JSON (null if empty).
+    // Normalize to an array of {qty, name, upc, itemId?}; store as JSON (null
+    // if empty). itemId links back to a real catalog item when the row was
+    // picked from search; omitted for a manually-typed row (something not
+    // set up as its own item yet) — kept so the UI can tell the two apart on
+    // reload instead of everything looking manually-typed.
     let arr = [];
     if (Array.isArray(contains)) {
       arr = contains
-        .map(x => ({ qty: Number(x.qty) || 0, name: String(x.name || '').trim(), upc: String(x.upc || '').trim() }))
+        .map(x => ({ qty: Number(x.qty) || 0, name: String(x.name || '').trim(), upc: String(x.upc || '').trim(), ...(x.itemId ? { itemId: String(x.itemId) } : {}) }))
         .filter(x => x.name || x.upc || x.qty);
     }
     updates.push('contains = ?'); params.push(arr.length ? JSON.stringify(arr) : null);
