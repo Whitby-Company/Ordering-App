@@ -1363,27 +1363,31 @@ router.get('/taiyo-report', (req, res) => {
   ).all(...params);
 
   const items = {};
-  let grandCases = 0, grandOwed = 0;
+  let grandCases = 0, grandOwed = 0, grandBoxes = 0;
   for (const l of lines) {
     const it = byId[l.itemId];
     if (!it) continue;
-    // Cases sold: a case line = qty cases; a box line = qty / case_size cases.
+    // Cases sold (used for the $ owed math): a case line = qty cases; a box
+    // line = qty / case_size cases. Boxes sold (a plain, physical count for
+    // display): a case line = qty x case_size boxes; a box line = qty boxes.
     const cs = Number(it.caseSize) > 0 ? Number(it.caseSize) : 1;
     const cases = l.unit === 'case' ? (Number(l.qty) || 0) : (Number(l.qty) || 0) / cs;
+    const boxes = l.unit === 'case' ? (Number(l.qty) || 0) * cs : (Number(l.qty) || 0);
     const owed = cases * Number(it.taiyoCost);
-    const g = items[l.itemId] || (items[l.itemId] = { itemId: l.itemId, brand: it.brand, name: it.name, taiyoCost: Number(it.taiyoCost), cases: 0, owed: 0, sales: [] });
-    g.cases += cases; g.owed += owed;
-    g.sales.push({ orderId: l.orderId, invoiceNumber: l.invoiceNumber, deliveryDate: l.deliveryDate, customer: l.customer, poNumber: l.poNumber, qty: l.qty, unit: l.unit, cases });
-    grandCases += cases; grandOwed += owed;
+    const g = items[l.itemId] || (items[l.itemId] = { itemId: l.itemId, brand: it.brand, name: it.name, taiyoCost: Number(it.taiyoCost), caseSize: cs, cases: 0, boxes: 0, owed: 0, sales: [] });
+    g.cases += cases; g.boxes += boxes; g.owed += owed;
+    g.sales.push({ orderId: l.orderId, invoiceNumber: l.invoiceNumber, deliveryDate: l.deliveryDate, customer: l.customer, poNumber: l.poNumber, qty: l.qty, unit: l.unit, boxes, cases });
+    grandCases += cases; grandBoxes += boxes; grandOwed += owed;
   }
   // Round cases to 2dp for display; keep items that had no sales too (0), so the
   // report always shows the full Taiyo list.
   for (const it of taiyoItems) {
-    if (!items[it.id]) items[it.id] = { itemId: it.id, brand: it.brand, name: it.name, taiyoCost: Number(it.taiyoCost), cases: 0, owed: 0, sales: [] };
+    const cs = Number(it.caseSize) > 0 ? Number(it.caseSize) : 1;
+    if (!items[it.id]) items[it.id] = { itemId: it.id, brand: it.brand, name: it.name, taiyoCost: Number(it.taiyoCost), caseSize: cs, cases: 0, boxes: 0, owed: 0, sales: [] };
   }
   const list = Object.values(items).map(g => ({ ...g, cases: Math.round(g.cases * 100) / 100, owed: Math.round(g.owed * 100) / 100 }))
     .sort((a, b) => (a.brand || '').localeCompare(b.brand || '') || (a.name || '').localeCompare(b.name || ''));
-  res.json({ from, to, items: list, grandCases: Math.round(grandCases * 100) / 100, grandOwed: Math.round(grandOwed * 100) / 100 });
+  res.json({ from, to, items: list, grandCases: Math.round(grandCases * 100) / 100, grandBoxes, grandOwed: Math.round(grandOwed * 100) / 100 });
 });
 
 // GET /api/orders/taiyo-fee-report?from=YYYY-MM-DD&to=YYYY-MM-DD — what's owed
