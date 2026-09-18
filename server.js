@@ -11,6 +11,7 @@ const savedReportsRouter = require('./routes/savedReports');
 const brandColorsRouter = require('./routes/brandColors');
 const brandSettingsRouter = require('./routes/brandSettings');
 const printOrderRouter = require('./routes/printOrder');
+const priceChecksRouter = require('./routes/priceChecks');
 
 const app = express();
 app.use(cors());
@@ -33,6 +34,7 @@ app.use('/api/purchase-orders', purchaseOrdersRouter);
 app.use('/api/saved-reports', savedReportsRouter);
 app.use('/api/brand-colors', brandColorsRouter);
 app.use('/api/brand-settings', brandSettingsRouter);
+app.use('/api/price-checks', priceChecksRouter);
 app.use('/api/print-order', printOrderRouter);
 
 // Basic error handler so uncaught errors return JSON, not an HTML crash page

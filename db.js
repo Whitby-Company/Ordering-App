@@ -383,6 +383,22 @@ db.exec(`CREATE TABLE IF NOT EXISTS po_lines (
   if (!poLineCols.includes('received_date')) db.exec('ALTER TABLE po_lines ADD COLUMN received_date TEXT');
 }
 
+// Competitive/retail price checks — logged when someone scans an item at a
+// retail account we DON'T service, to track what price it's selling at
+// there. retail_location is free-text (not a customers-table row) since
+// these are explicitly NOT our own accounts.
+db.exec(`CREATE TABLE IF NOT EXISTS price_checks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id TEXT NOT NULL,
+  retail_location TEXT NOT NULL,
+  base_price REAL,
+  promo_price REAL,
+  photo_url TEXT,
+  notes TEXT,
+  checked_by TEXT,
+  checked_at TEXT NOT NULL
+)`);
+
 // Dated physical-count baselines. Each row = "on as_of_date, this item physically
 // had `count` boxes on hand". On-hand and available stock are COMPUTED from the
 // latest baseline plus dated movements (PO receipts by received_date, orders by
