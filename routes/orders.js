@@ -529,6 +529,13 @@ router.post('/:id/taiyo-dropped', (req, res) => {
   if (info.changes === 0) return res.status(404).json({ error: 'Order not found' });
   res.json({ ok: true, id, taiyoDroppedAt: now });
 });
+// POST /api/orders/:id/taiyo-undrop — clear a mistaken/premature taiyo-dropped mark.
+router.post('/:id/taiyo-undrop', (req, res) => {
+  const id = Number(req.params.id);
+  const info = db.prepare('UPDATE orders SET taiyo_dropped_at = NULL WHERE id = ?').run(id);
+  if (info.changes === 0) return res.status(404).json({ error: 'Order not found' });
+  res.json({ ok: true, id, taiyoDroppedAt: null });
+});
 
 router.post('/:id/void', (req, res) => {
   const orderId = Number(req.params.id);
