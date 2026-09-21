@@ -399,6 +399,19 @@ db.exec(`CREATE TABLE IF NOT EXISTS price_checks (
   checked_at TEXT NOT NULL
 )`);
 
+// Taiyo warehouse page's "Taiyo Out" tab: a simple log of uploaded signed
+// proof-of-delivery / invoice documents. Not linked to a specific order row
+// -- reference is whatever the uploader types (invoice #, customer, etc.) to
+// identify it later. The list is empty until something is uploaded.
+db.exec(`CREATE TABLE IF NOT EXISTS pod_uploads (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  reference TEXT NOT NULL,
+  file_url TEXT NOT NULL,
+  file_type TEXT,
+  uploaded_by TEXT,
+  uploaded_at TEXT NOT NULL
+)`);
+
 // Dated physical-count baselines. Each row = "on as_of_date, this item physically
 // had `count` boxes on hand". On-hand and available stock are COMPUTED from the
 // latest baseline plus dated movements (PO receipts by received_date, orders by
