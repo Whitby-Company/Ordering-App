@@ -11,7 +11,8 @@ function getPO(id) {
   if (!po) return null;
   po.lines = db.prepare(
     `SELECT pl.id, pl.item_id AS itemId, i.name AS item, i.brand,
-            pl.qty_ordered AS qtyOrdered, pl.qty_received AS qtyReceived, pl.qty_short AS qtyShort
+            pl.qty_ordered AS qtyOrdered, pl.qty_received AS qtyReceived, pl.qty_short AS qtyShort,
+            pl.received_date AS receivedDate
        FROM po_lines pl LEFT JOIN items i ON i.id = pl.item_id
       WHERE pl.po_id = ? ORDER BY pl.id`
   ).all(id);
@@ -202,6 +203,67 @@ router.post('/:id/close-short', (req, res) => {
   });
   tx();
   res.json({ ok: true, totalShort, po: getPO(id) });
+});
+
+// PATCH /api/purchase-orders/:poId/lines/:lineId — directly correct a line's
+// received quantity and/or received date, e.g. fixing a receiving mistake
+// found after the fact. Unlike POST /:id/receive (which only adds to what's
+// already received and is meant for the normal receiving flow), this sets
+// the value outright and works even after the PO is fully 'received'.
+//
+// Applies the resulting quantity DELTA straight to items.stock, rather than
+// going through db.syncStock()/computeStock(): that function falls back to
+// treating an item's *current* cached stock as its baseline when no real
+// stock_baseline row exists, which makes it non-idempotent -- calling it a
+// second time after a correction (or after any second receipt of the same
+// item) adds the received amount on top of itself instead of replacing it.
+// That's a pre-existing issue in the stock computation, not introduced
+// here; applying an exact delta sidesteps it for this endpoint specifically
+// without touching that shared code path.
+router.patch('/:poId/lines/:lineId', (req, res) => {
+  const { poId, lineId } = req.params;
+  const po = db.prepare('SELECT id, reference, status FROM purchase_orders WHERE id = ?').get(poId);
+  if (!po) return res.status(404).json({ error: 'Purchase order not found' });
+  if (po.status === 'cancelled') return res.status(400).json({ error: 'PO is cancelled' });
+  const line = db.prepare('SELECT id, item_id, qty_ordered, qty_received FROM po_lines WHERE id = ? AND po_id = ?').get(lineId, poId);
+  if (!line) return res.status(404).json({ error: 'Line not found on this PO' });
+
+  const { qtyReceived, receivedDate, changedBy } = req.body || {};
+  const updates = [];
+  const params = [];
+  let qtyDelta = 0;
+  if (qtyReceived !== undefined) {
+    const q = Number(qtyReceived);
+    if (!Number.isFinite(q) || q < 0) return res.status(400).json({ error: 'qtyReceived must be a non-negative number' });
+    qtyDelta = q - line.qty_received; // in boxes, same unit items.stock is tracked in
+    updates.push('qty_received = ?'); params.push(q);
+  }
+  if (receivedDate !== undefined) {
+    if (receivedDate !== null && !/^\d{4}-\d{2}-\d{2}$/.test(receivedDate)) return res.status(400).json({ error: 'receivedDate must be YYYY-MM-DD' });
+    updates.push('received_date = ?'); params.push(receivedDate);
+  }
+  if (updates.length === 0) return res.status(400).json({ error: 'Nothing to update — provide qtyReceived and/or receivedDate' });
+
+  const before = db.prepare('SELECT stock FROM items WHERE id = ?').get(line.item_id);
+  const oldStock = before ? before.stock : 0;
+  const newStock = oldStock + qtyDelta;
+  const tx = db.transaction(() => {
+    params.push(lineId);
+    db.prepare(`UPDATE po_lines SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+    if (qtyDelta !== 0) db.prepare('UPDATE items SET stock = ? WHERE id = ?').run(newStock, line.item_id);
+  });
+  tx();
+  refreshStatus(Number(poId));
+
+  if (qtyDelta !== 0) {
+    const who = changedBy ? String(changedBy) : null;
+    db.prepare(
+      `INSERT INTO stock_log (item_id, old_stock, new_stock, delta, changed_by, reason, changed_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(line.item_id, oldStock, newStock, qtyDelta, who, `Corrected received qty on PO ${po.reference || po.id}`, new Date().toISOString());
+  }
+
+  res.json({ ok: true, po: getPO(poId) });
 });
 
 module.exports = router;
