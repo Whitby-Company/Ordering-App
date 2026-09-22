@@ -773,6 +773,25 @@ router.get('/export-stock-log', (req, res) => {
   res.send(lines.join('\n'));
 });
 
+// POST /api/items/cleanup-shipment-log-entries — one-time removal of
+// stock_log rows created by a since-reverted feature that logged each
+// order's on-hand impact as a separate "Shipped on order #..." entry. These
+// duplicate what the ledger already shows via the orders themselves, making
+// history look doubled. Pass ?dryRun=true to preview the count/sample
+// before deleting anything.
+router.post('/cleanup-shipment-log-entries', (req, res) => {
+  const dryRun = req.query.dryRun === 'true';
+  const rows = db.prepare(
+    `SELECT id, item_id, changed_at, reason FROM stock_log WHERE reason LIKE 'Shipped on order #%'`
+  ).all();
+  if (!dryRun && rows.length > 0) {
+    const del = db.prepare('DELETE FROM stock_log WHERE id = ?');
+    const tx = db.transaction(() => { for (const r of rows) del.run(r.id); });
+    tx();
+  }
+  res.json({ dryRun, found: rows.length, deleted: dryRun ? 0 : rows.length, sample: rows.slice(0, 10) });
+});
+
 // GET /api/items/stock-log/recent — the whole recent trail across items.
 router.get('/stock-log/recent', (req, res) => {
   const rows = db.prepare(
