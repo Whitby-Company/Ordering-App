@@ -277,7 +277,13 @@ router.patch('/:poId/lines/:lineId', (req, res) => {
     if (qtyDelta !== 0) db.prepare('UPDATE items SET stock = ? WHERE id = ?').run(newStock, line.item_id);
   });
   tx();
-  refreshStatus(Number(poId));
+  // Only recalculate the PO's overall status when the received quantity
+  // itself changed. Editing just qtyShort/qtyDamaged is a standalone
+  // correction (e.g. noting damage while more is still expected to arrive)
+  // and shouldn't silently flip the PO to "received" (hiding the normal
+  // receiving controls) just because the numbers happen to add up, nor
+  // reopen an already-closed PO back to "partial".
+  if (qtyReceived !== undefined) refreshStatus(Number(poId));
 
   if (qtyDelta !== 0) {
     const who = changedBy ? String(changedBy) : null;
