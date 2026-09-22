@@ -618,16 +618,10 @@ function rollForwardShipments(today = new Date().toISOString().slice(0, 10)) {
       const oldStock = it.stock;
       const newStock = oldStock - boxes;
       updStock.run(newStock, l.itemId);
-      // Log entry is dated to when the shipment actually happened (the
-      // order's delivery date), not to whenever this rollover happened to
-      // run — so catching up a backlog of past-due orders slots each one
-      // into its real place in history instead of bunching them all at
-      // "today." shipped_logged_at (below) is separately real-"now", since
-      // that just tracks when we processed it.
       insertLog.run(
         l.itemId, oldStock, newStock, -boxes, null,
         `Shipped on order #${l.orderId}${l.customerName ? ' - ' + l.customerName : ''} (delivery ${l.deliveryDate})`,
-        `${l.deliveryDate}T12:00:00.000Z`
+        now
       );
       markLine.run(now, l.lineId);
       processed++;
