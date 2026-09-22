@@ -776,7 +776,35 @@ router.get('/export-stock-log', (req, res) => {
   res.send(lines.join('\n'));
 });
 
-// GET /api/items/stock-log/recent — the whole recent trail across items.
+// POST /api/items/fix-shipment-log-dates — one-time correction for shipment
+// log entries created by the very first run of the day-rollover, which (before
+// a fix) dated everything "now" instead of each order's real delivery date,
+// bunching a whole backlog of past-due orders at today's date instead of
+// their real place in history. Extracts the real date from the entry's own
+// reason text ("... (delivery YYYY-MM-DD)") and re-dates it there. Pass
+// ?dryRun=true to preview what would change without writing anything.
+router.post('/fix-shipment-log-dates', (req, res) => {
+  const dryRun = req.query.dryRun === 'true';
+  const rows = db.prepare(
+    `SELECT id, item_id, changed_at, reason FROM stock_log WHERE reason LIKE 'Shipped on order #%(delivery %'`
+  ).all();
+  const upd = db.prepare('UPDATE stock_log SET changed_at = ? WHERE id = ?');
+  const preview = [];
+  let fixed = 0;
+  const tx = db.transaction(() => {
+    for (const r of rows) {
+      const m = /\(delivery (\d{4}-\d{2}-\d{2})\)/.exec(r.reason || '');
+      if (!m) continue;
+      const correctDate = `${m[1]}T12:00:00.000Z`;
+      if (r.changed_at === correctDate) continue; // already correct, nothing to do
+      preview.push({ id: r.id, itemId: r.item_id, from: r.changed_at, to: correctDate, reason: r.reason });
+      if (!dryRun) { upd.run(correctDate, r.id); fixed++; }
+    }
+  });
+  tx();
+  res.json({ dryRun, totalShipmentEntries: rows.length, wouldFix: preview.length, fixed, sample: preview.slice(0, 10) });
+});
+
 router.get('/stock-log/recent', (req, res) => {
   const rows = db.prepare(
     `SELECT sl.id, sl.item_id AS itemId, i.name AS item, i.brand,
