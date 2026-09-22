@@ -381,6 +381,10 @@ db.exec(`CREATE TABLE IF NOT EXISTS po_lines (
   // received_date: the physical date stock arrived (for date-based on-hand). This
   // lets you back-date a receipt so it flows into on-hand as of that date.
   if (!poLineCols.includes('received_date')) db.exec('ALTER TABLE po_lines ADD COLUMN received_date TEXT');
+  // qty_damaged: split out from qty_short — units that physically arrived but
+  // were unusable, as distinct from units that never showed up at all
+  // (useful later for supplier claims/insurance, which need that split).
+  if (!poLineCols.includes('qty_damaged')) db.exec('ALTER TABLE po_lines ADD COLUMN qty_damaged INTEGER NOT NULL DEFAULT 0');
 }
 
 // Competitive/retail price checks — logged when someone scans an item at a

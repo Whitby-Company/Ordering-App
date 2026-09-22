@@ -12,23 +12,26 @@ function getPO(id) {
   po.lines = db.prepare(
     `SELECT pl.id, pl.item_id AS itemId, i.name AS item, i.brand,
             pl.qty_ordered AS qtyOrdered, pl.qty_received AS qtyReceived, pl.qty_short AS qtyShort,
-            pl.received_date AS receivedDate
+            pl.qty_damaged AS qtyDamaged, pl.received_date AS receivedDate
        FROM po_lines pl LEFT JOIN items i ON i.id = pl.item_id
       WHERE pl.po_id = ? ORDER BY pl.id`
   ).all(id);
   return po;
 }
 
-// Recompute a PO's status from its lines.
+// Recompute a PO's status from its lines. "Accounted for" = received + short
+// + damaged, since short/damaged quantities are just as final as received
+// ones (they're never coming, but the line is done either way).
 function refreshStatus(id) {
   const po = db.prepare('SELECT status FROM purchase_orders WHERE id = ?').get(id);
   if (!po || po.status === 'cancelled') return;
-  const lines = db.prepare('SELECT qty_ordered, qty_received FROM po_lines WHERE po_id = ?').all(id);
+  const lines = db.prepare('SELECT qty_ordered, qty_received, qty_short, qty_damaged FROM po_lines WHERE po_id = ?').all(id);
   const totalOrdered = lines.reduce((s, l) => s + l.qty_ordered, 0);
   const totalReceived = lines.reduce((s, l) => s + l.qty_received, 0);
+  const totalAccounted = lines.reduce((s, l) => s + l.qty_received + (l.qty_short || 0) + (l.qty_damaged || 0), 0);
   let status = 'open';
-  if (totalReceived > 0 && totalReceived < totalOrdered) status = 'partial';
-  else if (totalOrdered > 0 && totalReceived >= totalOrdered) status = 'received';
+  if (totalReceived > 0 && totalAccounted < totalOrdered) status = 'partial';
+  else if (totalOrdered > 0 && totalAccounted >= totalOrdered) status = 'received';
   db.prepare('UPDATE purchase_orders SET status = ? WHERE id = ?').run(status, id);
 }
 
@@ -184,32 +187,43 @@ router.post('/:id/receive', (req, res) => {
 });
 
 // POST /api/purchase-orders/:id/close-short — mark the PO done, recording the
-// still-outstanding quantity per line as short/damaged (it never arrived).
+// still-outstanding quantity per line as short and/or damaged (either way,
+// it never becomes usable stock). body: { damaged: { [lineId]: qty } }
+// (optional) — however much of a line's outstanding qty is specified as
+// damaged there; the remainder of that line's outstanding is recorded as
+// short (genuinely missing). Omit entirely for the old all-short behavior.
 router.post('/:id/close-short', (req, res) => {
   const id = Number(req.params.id);
   const po = db.prepare('SELECT id, status FROM purchase_orders WHERE id = ?').get(id);
   if (!po) return res.status(404).json({ error: 'Purchase order not found' });
   if (po.status === 'cancelled') return res.status(400).json({ error: 'PO is cancelled' });
-  const lines = db.prepare('SELECT id, qty_ordered, qty_received, qty_short FROM po_lines WHERE po_id = ?').all(id);
-  const setShort = db.prepare('UPDATE po_lines SET qty_short = ? WHERE id = ?');
-  let totalShort = 0;
+  const lines = db.prepare('SELECT id, qty_ordered, qty_received, qty_short, qty_damaged FROM po_lines WHERE po_id = ?').all(id);
+  const damagedInput = (req.body && req.body.damaged) || {};
+  const setLine = db.prepare('UPDATE po_lines SET qty_short = ?, qty_damaged = ? WHERE id = ?');
+  let totalShort = 0, totalDamaged = 0;
   const tx = db.transaction(() => {
     for (const l of lines) {
-      const short = l.qty_ordered - l.qty_received - (l.qty_short || 0);
-      if (short > 0) { setShort.run((l.qty_short || 0) + short, l.id); totalShort += short; }
+      const outstanding = l.qty_ordered - l.qty_received - (l.qty_short || 0) - (l.qty_damaged || 0);
+      if (outstanding <= 0) continue;
+      const damagedRequested = Number(damagedInput[l.id]) || 0;
+      const damaged = Math.max(0, Math.min(damagedRequested, outstanding));
+      const short = outstanding - damaged;
+      setLine.run((l.qty_short || 0) + short, (l.qty_damaged || 0) + damaged, l.id);
+      totalShort += short; totalDamaged += damaged;
     }
     // Closed short = considered received/complete (no more expected).
     db.prepare("UPDATE purchase_orders SET status = 'received' WHERE id = ?").run(id);
   });
   tx();
-  res.json({ ok: true, totalShort, po: getPO(id) });
+  res.json({ ok: true, totalShort, totalDamaged, po: getPO(id) });
 });
 
 // PATCH /api/purchase-orders/:poId/lines/:lineId — directly correct a line's
-// received quantity and/or received date, e.g. fixing a receiving mistake
-// found after the fact. Unlike POST /:id/receive (which only adds to what's
-// already received and is meant for the normal receiving flow), this sets
-// the value outright and works even after the PO is fully 'received'.
+// received quantity, received date, short quantity, and/or damaged quantity,
+// e.g. fixing a receiving mistake found after the fact. Unlike POST
+// /:id/receive (which only adds to what's already received and is meant for
+// the normal receiving flow), this sets values outright and works even
+// after the PO is fully 'received'.
 //
 // Applies the resulting quantity DELTA straight to items.stock, rather than
 // going through db.syncStock()/computeStock(): that function falls back to
@@ -228,7 +242,7 @@ router.patch('/:poId/lines/:lineId', (req, res) => {
   const line = db.prepare('SELECT id, item_id, qty_ordered, qty_received FROM po_lines WHERE id = ? AND po_id = ?').get(lineId, poId);
   if (!line) return res.status(404).json({ error: 'Line not found on this PO' });
 
-  const { qtyReceived, receivedDate, changedBy } = req.body || {};
+  const { qtyReceived, receivedDate, qtyShort, qtyDamaged, changedBy } = req.body || {};
   const updates = [];
   const params = [];
   let qtyDelta = 0;
@@ -242,7 +256,17 @@ router.patch('/:poId/lines/:lineId', (req, res) => {
     if (receivedDate !== null && !/^\d{4}-\d{2}-\d{2}$/.test(receivedDate)) return res.status(400).json({ error: 'receivedDate must be YYYY-MM-DD' });
     updates.push('received_date = ?'); params.push(receivedDate);
   }
-  if (updates.length === 0) return res.status(400).json({ error: 'Nothing to update — provide qtyReceived and/or receivedDate' });
+  if (qtyShort !== undefined) {
+    const q = Number(qtyShort);
+    if (!Number.isFinite(q) || q < 0) return res.status(400).json({ error: 'qtyShort must be a non-negative number' });
+    updates.push('qty_short = ?'); params.push(q);
+  }
+  if (qtyDamaged !== undefined) {
+    const q = Number(qtyDamaged);
+    if (!Number.isFinite(q) || q < 0) return res.status(400).json({ error: 'qtyDamaged must be a non-negative number' });
+    updates.push('qty_damaged = ?'); params.push(q);
+  }
+  if (updates.length === 0) return res.status(400).json({ error: 'Nothing to update — provide qtyReceived, receivedDate, qtyShort, and/or qtyDamaged' });
 
   const before = db.prepare('SELECT stock FROM items WHERE id = ?').get(line.item_id);
   const oldStock = before ? before.stock : 0;
