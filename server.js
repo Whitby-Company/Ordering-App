@@ -2,7 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
-const db = require('./db');
 
 const customersRouter = require('./routes/customers');
 const itemsRouter = require('./routes/items');
@@ -50,19 +49,3 @@ const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`Inventory/order API running on port ${PORT}`);
 });
-
-// Permanently record any order shipments whose delivery date has arrived,
-// so on-hand stock is a real recorded log rather than something recomputed
-// live. Run once immediately (catches up anything missed while the server
-// was down) and then on a timer, since there's no external scheduled-job
-// infrastructure for this app to hook a midnight rollover into.
-function runShipmentRollover() {
-  try {
-    const result = db.rollForwardShipments();
-    if (result.processed > 0) console.log(`Rolled forward ${result.processed} shipment(s) to stock_log`);
-  } catch (err) {
-    console.error('Shipment rollover failed:', err);
-  }
-}
-runShipmentRollover();
-setInterval(runShipmentRollover, 30 * 60 * 1000); // every 30 minutes

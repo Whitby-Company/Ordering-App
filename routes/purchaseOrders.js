@@ -153,14 +153,12 @@ router.post('/:id/receive', (req, res) => {
   const receivedDate = /^\d{4}-\d{2}-\d{2}$/.test((req.body && req.body.receivedDate) || '') ? req.body.receivedDate : new Date().toISOString().slice(0, 10);
 
   const setRecv = db.prepare('UPDATE po_lines SET qty_received = qty_received + ?, received_date = ? WHERE id = ?');
-  const getStock = db.prepare('SELECT stock FROM items WHERE id = ?');
-  const updStock = db.prepare('UPDATE items SET stock = ? WHERE id = ?');
   const logStock = db.prepare(`INSERT INTO stock_log (item_id, old_stock, new_stock, delta, changed_by, reason, changed_at)
                                VALUES (?, ?, ?, ?, ?, ?, ?)`);
   const who = (req.body && req.body.receivedBy) ? String(req.body.receivedBy) : null;
   const poRef = po.reference || po.id;
+  const touched = [];
   let received = 0;
-  const now = new Date().toISOString();
   const tx = db.transaction(() => {
     for (const r of receipts) {
       const line = byItem.get(r.itemId);
@@ -171,17 +169,19 @@ router.post('/:id/receive', (req, res) => {
       const take = Math.min(qty, remaining);
       if (take <= 0) continue;
       setRecv.run(take, receivedDate, line.id);
+      touched.push(r.itemId);
       received += take;
-      // On-hand is a real, permanently-logged value now — apply the exact
-      // delta directly and record it, rather than recomputing from scratch.
-      const before = getStock.get(r.itemId);
-      const oldStock = before ? before.stock : 0;
-      const newStock = oldStock + take;
-      updStock.run(newStock, r.itemId);
-      logStock.run(r.itemId, oldStock, newStock, take, who, `Received PO ${poRef} (${receivedDate})`, now);
     }
   });
   tx();
+  // Stock is computed from baselines + dated movements (the received_date now
+  // counts toward on-hand). Sync the cached on-hand + log the receipt.
+  db.syncStock(touched);
+  const now = new Date().toISOString();
+  for (const itemId of touched) {
+    const cur = db.prepare('SELECT stock FROM items WHERE id = ?').get(itemId);
+    logStock.run(itemId, cur ? cur.stock : 0, cur ? cur.stock : 0, 0, who, `Received PO ${poRef} (${receivedDate})`, now);
+  }
   refreshStatus(id);
   res.json({ ok: true, received, receivedDate, po: getPO(id) });
 });
@@ -270,15 +270,28 @@ router.patch('/:poId/lines/:lineId', (req, res) => {
 
   const before = db.prepare('SELECT stock FROM items WHERE id = ?').get(line.item_id);
   const oldStock = before ? before.stock : 0;
+  const hasBaseline = !!db.prepare('SELECT 1 FROM stock_baseline WHERE item_id = ?').get(line.item_id);
   const tx = db.transaction(() => {
     params.push(lineId);
     db.prepare(`UPDATE po_lines SET ${updates.join(', ')} WHERE id = ?`).run(...params);
   });
   tx();
   if (qtyDelta !== 0) {
-    // On-hand is a real, permanently-logged value (items.stock) now, not
-    // recomputed from scratch — apply the exact delta directly.
-    db.prepare('UPDATE items SET stock = stock + ? WHERE id = ?').run(qtyDelta, line.item_id);
+    if (hasBaseline) {
+      // computeStock() is idempotent for a baselined item (its baseline
+      // count is a fixed, real row, not the item's own current stock), so
+      // the standard fresh recompute is safe here — and more accurate,
+      // since it also picks up anything else that may have changed
+      // (shipments, other receipts), not just this one correction.
+      db.syncStock([line.item_id]);
+    } else {
+      // No baseline: computeStock() falls back to treating the item's
+      // *current* stock as its own baseline, which makes a fresh recompute
+      // non-idempotent — calling it again would add the received amount on
+      // top of itself instead of replacing it. Apply the exact delta
+      // directly instead, sidestepping that pre-existing issue.
+      db.prepare('UPDATE items SET stock = stock + ? WHERE id = ?').run(qtyDelta, line.item_id);
+    }
   }
   // Only recalculate the PO's overall status when the received quantity
   // itself changed. Editing just qtyShort/qtyDamaged is a standalone

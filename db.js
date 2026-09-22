@@ -240,12 +240,6 @@ if (!orderLineColumns.includes('pack')) {
 if (!orderLineColumns.includes('requested_qty')) {
   db.exec('ALTER TABLE order_lines ADD COLUMN requested_qty INTEGER');
 }
-// Set once this line's on-hand impact (its delivery-date shipment) has been
-// permanently recorded to stock_log by the day-rollover process — so it's
-// logged exactly once, and re-running the rollover never double-counts.
-if (!orderLineColumns.includes('shipped_logged_at')) {
-  db.exec('ALTER TABLE order_lines ADD COLUMN shipped_logged_at TEXT');
-}
 if (!orderColumns.includes('notes')) {
   db.exec('ALTER TABLE orders ADD COLUMN notes TEXT');
 }
@@ -533,104 +527,67 @@ module.exports.nextInvoiceNumber = nextInvoiceNumber;
 //   on-hand(today)  = baseline.count
 //                     + PO receipts with received_date in (baseline.date, today]
 //                     - order boxes with delivery_date in (baseline.date, today]
-// On-hand is now maintained directly as a real, permanently-logged value
-// (items.stock) via discrete events — PO receipts, physical counts, and the
-// shipment day-rollover — rather than reconstructed from baseline + all
-// historical receipts/shipments on every read. That reconstruction was both
-// the source of the earlier double-counting bug (an item with no baseline
-// used its own current, already-updated stock as the next reconstruction's
-// starting point) and fundamentally in tension with a real permanent log:
-// two different systems computing the same number would inevitably conflict.
-// Only "available" is still computed fresh, since it's meant to reflect
-// live future commitments: on-hand minus boxes on any submitted order whose
-// delivery date hasn't arrived yet.
-// hasBaseline is retained for informational/display purposes only (whether
-// a physical count has ever been recorded for this item) — it no longer
-// affects the computed on-hand value at all.
+//   available       = on-hand - order boxes with delivery_date > today (future)
+// Boxes: a case line consumes qty * case_size boxes; a box line consumes qty.
+// Items with no baseline fall back to items.stock as their on-hand (legacy).
 function computeStock(opts = {}) {
   const today = opts.today || new Date().toISOString().slice(0, 10);
   const items = db.prepare('SELECT id, stock, case_size AS caseSize FROM items').all();
   const csById = {};
   for (const it of items) csById[it.id] = Number(it.caseSize) > 0 ? Number(it.caseSize) : 1;
 
-  const hasBaselineById = {};
-  for (const row of db.prepare('SELECT DISTINCT item_id AS itemId FROM stock_baseline').all()) {
-    hasBaselineById[row.itemId] = true;
-  }
+  // Latest baseline per item (most recent as_of_date).
+  const baselines = db.prepare(
+    `SELECT b.item_id AS itemId, b.count, b.as_of_date AS asOf
+       FROM stock_baseline b
+       JOIN (SELECT item_id, MAX(as_of_date) AS mx FROM stock_baseline GROUP BY item_id) m
+         ON m.item_id = b.item_id AND m.mx = b.as_of_date`
+  ).all();
+  const baseByItem = {};
+  for (const b of baselines) baseByItem[b.itemId] = b;
 
-  // Only FUTURE-dated submitted orders matter here now — anything with a
-  // delivery date <= today has already had its on-hand impact permanently
-  // recorded by rollForwardShipments(), not recomputed here.
-  const futureOrderLines = db.prepare(
-    `SELECT ol.item_id AS itemId, ol.qty, ol.unit
+  // Order movements: submitted orders, boxes per item, keyed by whether the
+  // delivery date is after the item's baseline and before/after today.
+  const orderLines = db.prepare(
+    `SELECT ol.item_id AS itemId, ol.qty, ol.unit, o.delivery_date AS deliveryDate
        FROM order_lines ol JOIN orders o ON o.id = ol.order_id
-      WHERE o.status = 'submitted' AND o.delivery_date > ?`
-  ).all(today);
+      WHERE o.status = 'submitted'`
+  ).all();
+  // PO receipts by received_date.
+  const receipts = db.prepare(
+    `SELECT item_id AS itemId, qty_received AS qty, received_date AS rd
+       FROM po_lines WHERE qty_received > 0`
+  ).all();
 
   const result = {};
   for (const it of items) {
-    let futureBoxes = 0;
-    for (const l of futureOrderLines) {
+    const base = baseByItem[it.id];
+    const baseDate = base ? base.asOf : null;
+    const baseCount = base ? Number(base.count) : Number(it.stock) || 0;
+    let shippedSinceBase = 0;   // delivered in [baseDate, today]
+    let futureBoxes = 0;        // delivered > today
+    for (const l of orderLines) {
       if (l.itemId !== it.id) continue;
-      futureBoxes += (Number(l.qty) || 0) * (l.unit === 'case' ? csById[it.id] : 1);
+      const boxes = (Number(l.qty) || 0) * (l.unit === 'case' ? csById[it.id] : 1);
+      const d = l.deliveryDate;
+      if (!d) continue;
+      if (d > today) futureBoxes += boxes;
+      else if (!baseDate || d >= baseDate) shippedSinceBase += boxes;
     }
-    const onHand = Number(it.stock) || 0;
+    let receivedSinceBase = 0;
+    for (const r of receipts) {
+      if (r.itemId !== it.id) continue;
+      const d = r.rd;
+      if (!d) continue; // undated receipts don't affect the dated model
+      if (d <= today && (!baseDate || d >= baseDate)) receivedSinceBase += Number(r.qty) || 0;
+    }
+    const onHand = baseCount + receivedSinceBase - shippedSinceBase;
     const available = onHand - futureBoxes;
-    result[it.id] = { onHand, available, futureBoxes, hasBaseline: !!hasBaselineById[it.id] };
+    result[it.id] = { onHand, available, futureBoxes, baseDate, baseCount, hasBaseline: !!base };
   }
   return result;
 }
 module.exports.computeStock = computeStock;
-
-// Permanently record each submitted order line's on-hand impact once its
-// delivery date has arrived, so "on hand" is a real, append-only log instead
-// of something recomputed live from scratch every time. Idempotent: only
-// ever processes a line once (shipped_logged_at gates it), so calling this
-// repeatedly — on server startup, on a timer, or defensively before a read —
-// never double-counts a shipment.
-function rollForwardShipments(today = new Date().toISOString().slice(0, 10)) {
-  const due = db.prepare(
-    `SELECT ol.id AS lineId, ol.item_id AS itemId, ol.qty, ol.unit, o.id AS orderId,
-            o.delivery_date AS deliveryDate, c.name AS customerName
-       FROM order_lines ol
-       JOIN orders o ON o.id = ol.order_id
-       LEFT JOIN customers c ON c.id = o.customer_id
-      WHERE o.status = 'submitted' AND o.delivery_date <= ? AND ol.shipped_logged_at IS NULL
-      ORDER BY o.delivery_date, o.id, ol.id`
-  ).all(today);
-  if (due.length === 0) return { processed: 0 };
-
-  const getItem = db.prepare('SELECT stock, case_size AS caseSize FROM items WHERE id = ?');
-  const updStock = db.prepare('UPDATE items SET stock = ? WHERE id = ?');
-  const markLine = db.prepare('UPDATE order_lines SET shipped_logged_at = ? WHERE id = ?');
-  const insertLog = db.prepare(
-    `INSERT INTO stock_log (item_id, old_stock, new_stock, delta, changed_by, reason, changed_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
-  );
-  const now = new Date().toISOString();
-  let processed = 0;
-  const tx = db.transaction(() => {
-    for (const l of due) {
-      const it = getItem.get(l.itemId);
-      if (!it) { markLine.run(now, l.lineId); continue; } // item no longer exists — nothing to log, just mark done
-      const cs = Number(it.caseSize) > 0 ? Number(it.caseSize) : 1;
-      const boxes = (Number(l.qty) || 0) * (l.unit === 'case' ? cs : 1);
-      const oldStock = it.stock;
-      const newStock = oldStock - boxes;
-      updStock.run(newStock, l.itemId);
-      insertLog.run(
-        l.itemId, oldStock, newStock, -boxes, null,
-        `Shipped on order #${l.orderId}${l.customerName ? ' - ' + l.customerName : ''} (delivery ${l.deliveryDate})`,
-        now
-      );
-      markLine.run(now, l.lineId);
-      processed++;
-    }
-  });
-  tx();
-  return { processed };
-}
-module.exports.rollForwardShipments = rollForwardShipments;
 
 // Sync the stored items.stock to the computed ON-HAND for the given item ids
 // (or all items if none given). Call this after any order/PO change so the
