@@ -12,6 +12,9 @@ const router = express.Router();
 // e.g. for the office management view.
 // Optional query params: ?brand=Oberto  ?lowStockMax=5  ?includeInactive=true
 router.get('/', (req, res) => {
+  // Defensive: catch up any shipments whose delivery date arrived since the
+  // last periodic rollover, so on-hand is never stale by more than a request.
+  try { db.rollForwardShipments(); } catch (err) { console.error('Shipment rollover failed:', err); }
   const { brand, lowStockMax, includeInactive } = req.query;
   let sql = 'SELECT id, brand, name, stock, price, pack, packLabel, imageUrl, upc, active, contains, is_default as isDefault, case_size as caseSize, case_price as casePrice, cost, net_cost as netCost, taiyo_cost as taiyoCost, notes FROM items WHERE 1=1';
   const params = [];
