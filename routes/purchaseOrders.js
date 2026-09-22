@@ -270,13 +270,29 @@ router.patch('/:poId/lines/:lineId', (req, res) => {
 
   const before = db.prepare('SELECT stock FROM items WHERE id = ?').get(line.item_id);
   const oldStock = before ? before.stock : 0;
-  const newStock = oldStock + qtyDelta;
+  const hasBaseline = !!db.prepare('SELECT 1 FROM stock_baseline WHERE item_id = ?').get(line.item_id);
   const tx = db.transaction(() => {
     params.push(lineId);
     db.prepare(`UPDATE po_lines SET ${updates.join(', ')} WHERE id = ?`).run(...params);
-    if (qtyDelta !== 0) db.prepare('UPDATE items SET stock = ? WHERE id = ?').run(newStock, line.item_id);
   });
   tx();
+  if (qtyDelta !== 0) {
+    if (hasBaseline) {
+      // computeStock() is idempotent for a baselined item (its baseline
+      // count is a fixed, real row, not the item's own current stock), so
+      // the standard fresh recompute is safe here — and more accurate,
+      // since it also picks up anything else that may have changed
+      // (shipments, other receipts), not just this one correction.
+      db.syncStock([line.item_id]);
+    } else {
+      // No baseline: computeStock() falls back to treating the item's
+      // *current* stock as its own baseline, which makes a fresh recompute
+      // non-idempotent — calling it again would add the received amount on
+      // top of itself instead of replacing it. Apply the exact delta
+      // directly instead, sidestepping that pre-existing issue.
+      db.prepare('UPDATE items SET stock = stock + ? WHERE id = ?').run(qtyDelta, line.item_id);
+    }
+  }
   // Only recalculate the PO's overall status when the received quantity
   // itself changed. Editing just qtyShort/qtyDamaged is a standalone
   // correction (e.g. noting damage while more is still expected to arrive)
@@ -286,11 +302,13 @@ router.patch('/:poId/lines/:lineId', (req, res) => {
   if (qtyReceived !== undefined) refreshStatus(Number(poId));
 
   if (qtyDelta !== 0) {
+    const after = db.prepare('SELECT stock FROM items WHERE id = ?').get(line.item_id);
+    const newStock = after ? after.stock : oldStock;
     const who = changedBy ? String(changedBy) : null;
     db.prepare(
       `INSERT INTO stock_log (item_id, old_stock, new_stock, delta, changed_by, reason, changed_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).run(line.item_id, oldStock, newStock, qtyDelta, who, `Corrected received qty on PO ${po.reference || po.id}`, new Date().toISOString());
+    ).run(line.item_id, oldStock, newStock, newStock - oldStock, who, `Corrected received qty on PO ${po.reference || po.id}`, new Date().toISOString());
   }
 
   res.json({ ok: true, po: getPO(poId) });
