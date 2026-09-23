@@ -440,9 +440,15 @@ router.patch('/:id', (req, res) => {
     return res.status(400).json({ error: 'customerId, deliveryDate, and at least one line are required' });
   }
 
-  const order = db.prepare('SELECT id, status FROM orders WHERE id = ?').get(orderId);
+  const order = db.prepare('SELECT id, status, non_inventory FROM orders WHERE id = ?').get(orderId);
   if (!order) return res.status(404).json({ error: 'Order not found' });
   const isPending = order.status === 'pending';
+  // Preserve the existing non-inventory flag unless the caller explicitly
+  // sends one -- several callers (e.g. the QuickBooks invoice-matching tool)
+  // only patch quantities/customer/date and don't know about this flag at
+  // all, so treating "not sent" as false would silently un-mark an order
+  // that was deliberately set non-inventory.
+  const nonInventoryVal = req.body.nonInventory === undefined ? (order.non_inventory ? 1 : 0) : (req.body.nonInventory ? 1 : 0);
 
   const customer = db.prepare('SELECT id, name FROM customers WHERE id = ?').get(customerId);
   if (!customer) return res.status(404).json({ error: 'Customer not found' });
@@ -501,7 +507,7 @@ router.patch('/:id', (req, res) => {
   const run = db.transaction(() => {
     deleteLines.run(orderId);
     for (const { item, qty, requestedQty, unit, pack, price } of resolvedLines) insertLine.run(orderId, item.id, qty, requestedQty, price, unit, pack);
-    updateOrder.run(customerId, deliveryDate, cleanNotes, new Date().toISOString(), req.body.nonInventory ? 1 : 0, orderId);
+    updateOrder.run(customerId, deliveryDate, cleanNotes, new Date().toISOString(), nonInventoryVal, orderId);
   });
   run();
   // Stock is computed; sync cached on-hand for all items touched (old + new lines).
