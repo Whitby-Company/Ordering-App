@@ -74,6 +74,26 @@ router.get('/incoming', (req, res) => {
   res.json(map);
 });
 
+// GET /api/purchase-orders/incoming-detail — like /incoming, but also
+// reports the soonest expected date among the open POs contributing to that
+// qty, for reports that want to show not just how much is coming but when.
+// A separate endpoint rather than changing /incoming's shape, since that one
+// is already relied on elsewhere as a plain per-item number.
+router.get('/incoming-detail', (req, res) => {
+  const rows = db.prepare(
+    `SELECT pl.item_id AS itemId, pl.qty_ordered - pl.qty_received AS remaining, po.expected_date AS expectedDate
+       FROM po_lines pl JOIN purchase_orders po ON po.id = pl.po_id
+      WHERE po.status IN ('open','partial') AND pl.qty_ordered - pl.qty_received > 0`
+  ).all();
+  const map = {};
+  for (const r of rows) {
+    const cur = map[r.itemId] || (map[r.itemId] = { qty: 0, nextDate: null });
+    cur.qty += r.remaining;
+    if (r.expectedDate && (!cur.nextDate || r.expectedDate < cur.nextDate)) cur.nextDate = r.expectedDate;
+  }
+  res.json(map);
+});
+
 // GET /api/purchase-orders/:id
 router.get('/:id', (req, res) => {
   const po = getPO(req.params.id);
