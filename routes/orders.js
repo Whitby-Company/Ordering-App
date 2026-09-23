@@ -125,6 +125,20 @@ router.post('/set-ready', (req, res) => {
   tx();
   res.json({ ok: true, updated: ids.length, ready: !!ready });
 });
+// POST /api/orders/set-taiyo-fee-excluded { ids: [], excluded: bool } — marks
+// one or more orders as excluded from the Taiyo 6% handling-fee report (e.g.
+// an invoice that was never actually stored at Taiyo's warehouse). The order
+// still shows in the report for visibility, just doesn't count toward the
+// fee owed.
+router.post('/set-taiyo-fee-excluded', (req, res) => {
+  const ids = Array.isArray(req.body && req.body.ids) ? req.body.ids.map(n => parseInt(n, 10)).filter(Boolean) : [];
+  const excluded = (req.body && req.body.excluded) ? 1 : 0;
+  if (ids.length === 0) return res.status(400).json({ error: 'Provide ids: []' });
+  const upd = db.prepare('UPDATE orders SET taiyo_fee_excluded = ? WHERE id = ?');
+  const tx = db.transaction(() => { for (const id of ids) upd.run(excluded, id); });
+  tx();
+  res.json({ ok: true, updated: ids.length, excluded: !!excluded });
+});
 // POST /api/orders/mark-exported { ids: [] } — flag orders exported + clear ready.
 router.post('/mark-exported', (req, res) => {
   const ids = Array.isArray(req.body && req.body.ids) ? req.body.ids.map(n => parseInt(n, 10)).filter(Boolean) : [];
@@ -1414,7 +1428,7 @@ router.get('/taiyo-fee-report', (req, res) => {
   if (to) { clauses.push('o.delivery_date <= ?'); params.push(to); }
   const lines = db.prepare(
     `SELECT o.id AS orderId, o.invoice_number AS invoiceNumber, o.delivery_date AS deliveryDate,
-            o.po_number AS poNumber, c.name AS customer,
+            o.po_number AS poNumber, c.name AS customer, o.taiyo_fee_excluded AS taiyoFeeExcluded,
             ol.item_id AS itemId, ol.qty, ol.unit, i.case_size AS caseSize,
             i.name AS itemName, i.brand, i.net_cost AS netCost
        FROM order_lines ol
@@ -1432,6 +1446,7 @@ router.get('/taiyo-fee-report', (req, res) => {
     const inv = invoices[l.orderId] || (invoices[l.orderId] = {
       orderId: l.orderId, invoiceNumber: l.invoiceNumber, deliveryDate: l.deliveryDate,
       poNumber: l.poNumber, customer: l.customer, netCostTotal: 0, missingItems: [],
+      taiyoFeeExcluded: !!l.taiyoFeeExcluded,
     });
     // net_cost is PER BOX -- a case line is qty x case_size boxes, a box line is qty boxes.
     const cs = Number(l.caseSize) > 0 ? Number(l.caseSize) : 1;
@@ -1443,7 +1458,10 @@ router.get('/taiyo-fee-report', (req, res) => {
     }
     const lineNetCost = boxes * Number(l.netCost);
     inv.netCostTotal += lineNetCost;
-    grandNetCost += lineNetCost;
+    // Excluded invoices still show their real net cost/fee in the list (so
+    // it's clear what's being left out and why), just don't count toward
+    // the totals owed.
+    if (!inv.taiyoFeeExcluded) grandNetCost += lineNetCost;
   }
 
   const invoiceList = Object.values(invoices).map(inv => ({

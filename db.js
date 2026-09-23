@@ -294,6 +294,13 @@ if (!orderColumns.includes('exported')) {
 if (!orderColumns.includes('ready_for_import')) {
   db.exec('ALTER TABLE orders ADD COLUMN ready_for_import INTEGER NOT NULL DEFAULT 0');
 }
+// Manually excludes this order from the Taiyo 6% handling-fee report — for
+// invoices Taiyo shouldn't actually be paid a fee on (e.g. one that was
+// never stored at their warehouse), decided per-invoice by office staff
+// rather than inferred from any other flag.
+if (!orderColumns.includes('taiyo_fee_excluded')) {
+  db.exec('ALTER TABLE orders ADD COLUMN taiyo_fee_excluded INTEGER NOT NULL DEFAULT 0');
+}
 
 // Small key/value table for one-time migrations / flags.
 db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)');
