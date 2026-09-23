@@ -1479,4 +1479,73 @@ router.get('/taiyo-fee-report', (req, res) => {
   });
 });
 
+// GET /api/orders/short-shipped-fulfillable?itemIds=a,b,c — orders that were
+// short-shipped (requestedQty > qty on some line) and could now be topped up
+// because the item has stock available again — whether from a PO receipt, a
+// physical count, or a retail return/rejection put back into stock. Only
+// considers orders not yet delivered (delivery_date >= today) and not yet
+// processed, since those are the ones still realistically actionable.
+// itemIds (optional) narrows the check to specific items, e.g. right after
+// receiving a PO, rather than scanning every item in the catalog.
+router.get('/short-shipped-fulfillable', (req, res) => {
+  const today = db.todayHST();
+  const itemIdFilter = typeof req.query.itemIds === 'string' && req.query.itemIds.trim()
+    ? new Set(req.query.itemIds.split(',').map(s => s.trim()).filter(Boolean))
+    : null;
+
+  const lines = db.prepare(
+    `SELECT o.id AS orderId, o.invoice_number AS invoiceNumber, o.delivery_date AS deliveryDate,
+            o.customer_id AS customerId, c.name AS customer,
+            ol.item_id AS itemId, ol.qty, ol.requested_qty AS requestedQty, ol.unit,
+            i.name AS itemName, i.brand, i.case_size AS caseSize
+       FROM order_lines ol
+       JOIN orders o ON o.id = ol.order_id
+       JOIN customers c ON c.id = o.customer_id
+       JOIN items i ON i.id = ol.item_id
+      WHERE o.status = 'submitted' AND o.voided = 0 AND o.processed = 0
+        AND o.delivery_date >= ?
+        AND ol.requested_qty IS NOT NULL AND ol.requested_qty > ol.qty`
+  ).all(today);
+
+  const byItem = {};
+  for (const l of lines) {
+    if (itemIdFilter && !itemIdFilter.has(l.itemId)) continue;
+    (byItem[l.itemId] || (byItem[l.itemId] = [])).push(l);
+  }
+  if (Object.keys(byItem).length === 0) return res.json({ flagged: [] });
+
+  const stock = db.computeStock();
+  const flagged = [];
+
+  for (const itemId of Object.keys(byItem)) {
+    const st = stock[itemId];
+    let pool = st ? Number(st.available) || 0 : 0;
+    if (pool <= 0) continue;
+    const cs = Number(byItem[itemId][0].caseSize) > 0 ? Number(byItem[itemId][0].caseSize) : 1;
+    // FIFO: the order due soonest gets first claim on the limited stock, so
+    // the sum of what's flagged never promises more than is actually there.
+    const lineList = byItem[itemId].slice().sort((a, b) =>
+      (a.deliveryDate || '').localeCompare(b.deliveryDate || '') || a.orderId - b.orderId
+    );
+    for (const l of lineList) {
+      if (pool <= 0) break;
+      const shortfallOwnUnit = Number(l.requestedQty) - Number(l.qty);
+      const shortfallBoxes = shortfallOwnUnit * (l.unit === 'case' ? cs : 1);
+      const fulfillableBoxes = Math.min(shortfallBoxes, pool);
+      if (fulfillableBoxes <= 0) continue;
+      const fulfillableOwnUnit = l.unit === 'case' ? fulfillableBoxes / cs : fulfillableBoxes;
+      flagged.push({
+        orderId: l.orderId, invoiceNumber: l.invoiceNumber, deliveryDate: l.deliveryDate,
+        customerId: l.customerId, customer: l.customer,
+        itemId, itemName: l.itemName, brand: l.brand, unit: l.unit,
+        qty: l.qty, requestedQty: l.requestedQty,
+        shortfall: shortfallOwnUnit, fulfillableNow: fulfillableOwnUnit,
+      });
+      pool -= fulfillableBoxes;
+    }
+  }
+  flagged.sort((a, b) => (a.deliveryDate || '').localeCompare(b.deliveryDate || '') || a.orderId - b.orderId);
+  res.json({ flagged });
+});
+
 module.exports = router;
