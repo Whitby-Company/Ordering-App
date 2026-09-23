@@ -280,18 +280,33 @@ router.patch('/brand/:brand', (req, res) => {
 });
 
 // POST /api/items/bulk-update — apply stock/price updates to many items at once,
-// e.g. from a CSV re-upload. body: { updates: [{ id, stock?, price? }, ...] }
+// e.g. from a CSV re-upload. body: { updates: [{ id, stock?, price? }, ...], changedBy? }
 // Runs as a single transaction; unknown ids are reported back, not errored on.
+// A stock change is logged to stock_log AND given a dated baseline (same as a
+// single-item manual edit) so it shows up in the item's history and actually
+// sticks as the new on-hand anchor -- without the baseline, the date-based
+// model would have no record this happened and could silently recompute past
+// it on the next order or PO sync.
 router.post('/bulk-update', (req, res) => {
-  const { updates } = req.body;
+  const { updates, changedBy } = req.body;
   if (!Array.isArray(updates) || updates.length === 0) {
     return res.status(400).json({ error: 'updates must be a non-empty array' });
   }
+  const by = (typeof changedBy === 'string' && changedBy.trim()) ? changedBy.trim() : 'CSV import';
+  const today = db.todayHST();
+  const now = new Date().toISOString();
 
-  const getItem = db.prepare('SELECT id FROM items WHERE id = ?');
+  const getItem = db.prepare('SELECT id, stock FROM items WHERE id = ?');
   const updateStock = db.prepare('UPDATE items SET stock = ? WHERE id = ?');
   const updatePrice = db.prepare('UPDATE items SET price = ? WHERE id = ?');
   const updateBoth = db.prepare('UPDATE items SET stock = ?, price = ? WHERE id = ?');
+  const logStock = db.prepare(
+    `INSERT INTO stock_log (item_id, old_stock, new_stock, delta, changed_by, reason, changed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  );
+  const insBaseline = db.prepare(
+    'INSERT INTO stock_baseline (item_id, count, as_of_date, created_by, created_at) VALUES (?, ?, ?, ?, ?)'
+  );
 
   const notFound = [];
   let updated = 0;
@@ -299,20 +314,22 @@ router.post('/bulk-update', (req, res) => {
   const run = db.transaction(() => {
     for (const u of updates) {
       if (!u || !u.id) continue;
-      if (!getItem.get(u.id)) { notFound.push(u.id); continue; }
+      const item = getItem.get(u.id);
+      if (!item) { notFound.push(u.id); continue; }
 
       const hasStock = u.stock !== undefined && u.stock !== null && u.stock !== '' && !Number.isNaN(Number(u.stock));
       const hasPrice = u.price !== undefined && u.price !== null && u.price !== '' && !Number.isNaN(Number(u.price));
+      const newStock = hasStock ? Number(u.stock) : null;
+      const stockChanged = hasStock && newStock !== Number(item.stock);
 
-      if (hasStock && hasPrice) {
-        updateBoth.run(Number(u.stock), Number(u.price), u.id);
-        updated++;
-      } else if (hasStock) {
-        updateStock.run(Number(u.stock), u.id);
-        updated++;
-      } else if (hasPrice) {
-        updatePrice.run(Number(u.price), u.id);
-        updated++;
+      if (hasStock && hasPrice) updateBoth.run(newStock, Number(u.price), u.id);
+      else if (hasStock) updateStock.run(newStock, u.id);
+      else if (hasPrice) updatePrice.run(Number(u.price), u.id);
+      if (hasStock || hasPrice) updated++;
+
+      if (stockChanged) {
+        logStock.run(u.id, item.stock, newStock, newStock - Number(item.stock), by, 'CSV import', now);
+        insBaseline.run(u.id, newStock, today, by, now);
       }
     }
   });
