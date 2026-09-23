@@ -150,7 +150,7 @@ router.post('/:id/receive', (req, res) => {
   const receipts = (req.body && req.body.all)
     ? lines.map(l => ({ itemId: l.item_id, qty: l.qty_ordered - l.qty_received })).filter(r => r.qty > 0)
     : ((req.body && req.body.receipts) || []);
-  const receivedDate = /^\d{4}-\d{2}-\d{2}$/.test((req.body && req.body.receivedDate) || '') ? req.body.receivedDate : new Date().toISOString().slice(0, 10);
+  const receivedDate = /^\d{4}-\d{2}-\d{2}$/.test((req.body && req.body.receivedDate) || '') ? req.body.receivedDate : db.todayHST();
 
   const setRecv = db.prepare('UPDATE po_lines SET qty_received = qty_received + ?, received_date = ? WHERE id = ?');
   const logStock = db.prepare(`INSERT INTO stock_log (item_id, old_stock, new_stock, delta, changed_by, reason, changed_at)

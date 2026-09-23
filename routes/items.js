@@ -229,7 +229,7 @@ router.patch('/:id', (req, res) => {
     // model computes on-hand from the latest baseline — without this, the next
     // order recalculation would overwrite a direct stock edit). Editing stock =
     // "on hand is now this", i.e. a physical count as of today.
-    const today = new Date().toISOString().slice(0, 10);
+    const today = db.todayHST();
     db.prepare('INSERT INTO stock_baseline (item_id, count, as_of_date, created_by, created_at) VALUES (?, ?, ?, ?, ?)')
       .run(req.params.id, Number(stock), today,
         (typeof changedBy === 'string' && changedBy.trim()) ? changedBy.trim() : 'Stock edit',
@@ -566,7 +566,7 @@ router.post('/resync-stock', (req, res) => {
 // Body: { preview: true } to see the count without writing.
 router.post('/rebaseline-to-stock', (req, res) => {
   const dryRun = !!(req.body && req.body.preview);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = db.todayHST();
   const items = db.prepare('SELECT id, stock FROM items').all();
   const ins = db.prepare('INSERT INTO stock_baseline (item_id, count, as_of_date, created_by, created_at) VALUES (?, ?, ?, ?, ?)');
   const now = new Date().toISOString();
@@ -587,7 +587,7 @@ router.post('/rebaseline-to-stock', (req, res) => {
 // into the date-based model. Skips items that already have a baseline on/after
 // that date. Body: { asOfDate, preview }.
 router.post('/seed-baselines', (req, res) => {
-  const asOfDate = /^\d{4}-\d{2}-\d{2}$/.test((req.body && req.body.asOfDate) || '') ? req.body.asOfDate : new Date().toISOString().slice(0, 10);
+  const asOfDate = /^\d{4}-\d{2}-\d{2}$/.test((req.body && req.body.asOfDate) || '') ? req.body.asOfDate : db.todayHST();
   const dryRun = !!(req.body && req.body.preview);
   const reseed = !!(req.body && req.body.reseed);
   // If re-seeding, clear the previous Migration baselines for this date first so
@@ -650,7 +650,7 @@ router.post('/:id/baseline', (req, res) => {
   if (!item) return res.status(404).json({ error: 'Item not found' });
   const count = Number(req.body && req.body.count);
   if (!Number.isFinite(count)) return res.status(400).json({ error: 'count (boxes) required' });
-  const asOfDate = /^\d{4}-\d{2}-\d{2}$/.test(req.body.asOfDate || '') ? req.body.asOfDate : new Date().toISOString().slice(0, 10);
+  const asOfDate = /^\d{4}-\d{2}-\d{2}$/.test(req.body.asOfDate || '') ? req.body.asOfDate : db.todayHST();
   const by = (typeof req.body.changedBy === 'string' && req.body.changedBy.trim()) ? req.body.changedBy.trim() : null;
   const now = new Date().toISOString();
   const tx = db.transaction(() => {

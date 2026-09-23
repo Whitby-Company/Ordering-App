@@ -522,6 +522,19 @@ module.exports.setInvoiceFloor = setInvoiceFloor;
 module.exports.nextInvoiceNumber = nextInvoiceNumber;
 
 // ---- Date-based stock model ----
+// The business runs in Hawaii (HST, UTC-10, no daylight saving), but the
+// server itself runs on UTC — so `new Date()` alone answers "what day is it
+// in Hawaii?" wrong for roughly 10 hours out of every 24 (from about 2pm
+// HST until midnight HST, the server's own clock has already rolled over
+// into the next calendar day). Every "what's today?" fallback below uses
+// this instead of a bare `new Date().toISOString()`, so a physical count or
+// receipt logged in the afternoon or evening in Hawaii gets today's actual
+// Hawaii date, not tomorrow's UTC date.
+function todayHST() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Pacific/Honolulu', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+module.exports.todayHST = todayHST;
+
 // Compute on-hand and available stock for items from the latest physical-count
 // baseline plus dated movements:
 //   on-hand(today)  = baseline.count
@@ -531,7 +544,7 @@ module.exports.nextInvoiceNumber = nextInvoiceNumber;
 // Boxes: a case line consumes qty * case_size boxes; a box line consumes qty.
 // Items with no baseline fall back to items.stock as their on-hand (legacy).
 function computeStock(opts = {}) {
-  const today = opts.today || new Date().toISOString().slice(0, 10);
+  const today = opts.today || todayHST();
   const items = db.prepare('SELECT id, stock, case_size AS caseSize FROM items').all();
   const csById = {};
   for (const it of items) csById[it.id] = Number(it.caseSize) > 0 ? Number(it.caseSize) : 1;
