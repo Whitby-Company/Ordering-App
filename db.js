@@ -301,6 +301,14 @@ if (!orderColumns.includes('ready_for_import')) {
 if (!orderColumns.includes('taiyo_fee_excluded')) {
   db.exec('ALTER TABLE orders ADD COLUMN taiyo_fee_excluded INTEGER NOT NULL DEFAULT 0');
 }
+// Marks an order as non-inventory: it's still a real, billable order (the
+// invoice is unaffected), but its lines never actually get physically
+// received into the warehouse's tracked stock (e.g. drop-shipped straight to
+// the customer) -- so it shouldn't consume from or reduce on-hand/available
+// the way a normal order does.
+if (!orderColumns.includes('non_inventory')) {
+  db.exec('ALTER TABLE orders ADD COLUMN non_inventory INTEGER NOT NULL DEFAULT 0');
+}
 
 // Small key/value table for one-time migrations / flags.
 db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)');
@@ -568,10 +576,14 @@ function computeStock(opts = {}) {
 
   // Order movements: submitted orders, boxes per item, keyed by whether the
   // delivery date is after the item's baseline and before/after today.
+  // Non-inventory orders are excluded entirely -- they're real, billable
+  // orders, but their lines never actually get physically received into
+  // tracked stock (e.g. drop-shipped straight to the customer), so they
+  // shouldn't consume from or reduce on-hand/available.
   const orderLines = db.prepare(
     `SELECT ol.item_id AS itemId, ol.qty, ol.unit, o.delivery_date AS deliveryDate
        FROM order_lines ol JOIN orders o ON o.id = ol.order_id
-      WHERE o.status = 'submitted'`
+      WHERE o.status = 'submitted' AND o.non_inventory = 0`
   ).all();
   // PO receipts by received_date.
   const receipts = db.prepare(

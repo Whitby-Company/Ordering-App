@@ -11,7 +11,7 @@ router.get('/', (req, res) => {
   const orders = db
     .prepare(
       `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
-              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport, o.edited_at as editedAt, o.custom_status as customStatus, o.voided, o.taiyo_dropped_at as taiyoDroppedAt, o.taiyo_stored as taiyoStored,
+              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport, o.edited_at as editedAt, o.custom_status as customStatus, o.voided, o.taiyo_dropped_at as taiyoDroppedAt, o.taiyo_stored as taiyoStored, o.non_inventory as nonInventory,
               c.id as customerId, c.name as customer
        FROM orders o
        JOIN customers c ON c.id = o.customer_id
@@ -307,7 +307,7 @@ router.post('/', (req, res) => {
   }
 
   const insertOrder = db.prepare(
-    'INSERT INTO orders (customer_id, delivery_date, submitted_at, notes, submitted_by, status, po_number, invoice_number, ready_for_import) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO orders (customer_id, delivery_date, submitted_at, notes, submitted_by, status, po_number, invoice_number, ready_for_import, non_inventory) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   );
   const insertLine = db.prepare('INSERT INTO order_lines (order_id, item_id, qty, requested_qty, price, unit, pack) VALUES (?, ?, ?, ?, ?, ?, ?)');
 
@@ -351,7 +351,7 @@ router.post('/', (req, res) => {
   let cleanInv = Number.isFinite(invNum) && invNum > 0 ? Math.round(invNum) : null;
   if (cleanInv == null && !isPending) cleanInv = db.nextInvoiceNumber();
   const createOrder = db.transaction(() => {
-    const orderInfo = insertOrder.run(customerId, deliveryDate, submittedAt, cleanNotes, cleanSubmittedBy, status, cleanPo, cleanInv, isPending ? 0 : 1);
+    const orderInfo = insertOrder.run(customerId, deliveryDate, submittedAt, cleanNotes, cleanSubmittedBy, status, cleanPo, cleanInv, isPending ? 0 : 1, req.body.nonInventory ? 1 : 0);
     const orderId = orderInfo.lastInsertRowid;
     for (const { item, qty, requestedQty, unit, pack, price } of resolvedLines) {
       insertLine.run(orderId, item.id, qty, requestedQty, price, unit, pack);
@@ -495,13 +495,13 @@ router.patch('/:id', (req, res) => {
 
   const deleteLines = db.prepare('DELETE FROM order_lines WHERE order_id = ?');
   const insertLine = db.prepare('INSERT INTO order_lines (order_id, item_id, qty, requested_qty, price, unit, pack) VALUES (?, ?, ?, ?, ?, ?, ?)');
-  const updateOrder = db.prepare('UPDATE orders SET customer_id = ?, delivery_date = ?, notes = ?, edited_at = ?, processed = 0, processed_at = NULL WHERE id = ?');
+  const updateOrder = db.prepare('UPDATE orders SET customer_id = ?, delivery_date = ?, notes = ?, edited_at = ?, processed = 0, processed_at = NULL, non_inventory = ? WHERE id = ?');
 
   const cleanNotes = (typeof notes === 'string' && notes.trim()) ? notes.trim() : null;
   const run = db.transaction(() => {
     deleteLines.run(orderId);
     for (const { item, qty, requestedQty, unit, pack, price } of resolvedLines) insertLine.run(orderId, item.id, qty, requestedQty, price, unit, pack);
-    updateOrder.run(customerId, deliveryDate, cleanNotes, new Date().toISOString(), orderId);
+    updateOrder.run(customerId, deliveryDate, cleanNotes, new Date().toISOString(), req.body.nonInventory ? 1 : 0, orderId);
   });
   run();
   // Stock is computed; sync cached on-hand for all items touched (old + new lines).
@@ -509,7 +509,7 @@ router.patch('/:id', (req, res) => {
 
   const updated = db.prepare(
     `SELECT o.id, o.delivery_date as deliveryDate, o.submitted_at as submittedAt, o.notes,
-              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport, o.edited_at as editedAt, o.custom_status as customStatus, o.voided, o.taiyo_dropped_at as taiyoDroppedAt, o.taiyo_stored as taiyoStored,
+              o.processed, o.processed_at as processedAt, o.submitted_by as submittedBy, o.status, o.po_number as poNumber, o.invoice_number as invoiceNumber, o.exported, o.exported_at as exportedAt, o.ready_for_import as readyForImport, o.edited_at as editedAt, o.custom_status as customStatus, o.voided, o.taiyo_dropped_at as taiyoDroppedAt, o.taiyo_stored as taiyoStored, o.non_inventory as nonInventory,
             c.id as customerId, c.name as customer
      FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.id = ?`
   ).get(orderId);
@@ -1502,7 +1502,7 @@ router.get('/short-shipped-fulfillable', (req, res) => {
        JOIN orders o ON o.id = ol.order_id
        JOIN customers c ON c.id = o.customer_id
        JOIN items i ON i.id = ol.item_id
-      WHERE o.status = 'submitted' AND o.voided = 0 AND o.processed = 0
+      WHERE o.status = 'submitted' AND o.voided = 0 AND o.processed = 0 AND o.non_inventory = 0
         AND o.delivery_date >= ?
         AND ol.requested_qty IS NOT NULL AND ol.requested_qty > ol.qty`
   ).all(today);
