@@ -526,7 +526,75 @@ router.delete('/stock-log/:logId', (req, res) => {
   res.json({ ok: true, reverted, newStock, isLatest });
 });
 
-// POST /api/items/:id/stock-log — add a history entry WITHOUT changing stock.
+// POST /api/items/fix-changed-by { from, to, preview? } — bulk-renames a
+// changedBy/createdBy value across stock_log and stock_baseline (e.g. a
+// device's stored name that had extra text baked into it, showing up on
+// every entry that device ever made). preview: true reports counts without
+// writing anything.
+router.post('/fix-changed-by', (req, res) => {
+  const { from, to, preview } = req.body || {};
+  if (!from || !to) return res.status(400).json({ error: 'from and to are required' });
+  const logCount = db.prepare('SELECT COUNT(*) n FROM stock_log WHERE changed_by = ?').get(from).n;
+  const baselineCount = db.prepare('SELECT COUNT(*) n FROM stock_baseline WHERE created_by = ?').get(from).n;
+  if (!preview) {
+    const tx = db.transaction(() => {
+      db.prepare('UPDATE stock_log SET changed_by = ? WHERE changed_by = ?').run(to, from);
+      db.prepare('UPDATE stock_baseline SET created_by = ? WHERE created_by = ?').run(to, from);
+    });
+    tx();
+  }
+  res.json({ ok: true, preview: !!preview, logUpdated: logCount, baselinesUpdated: baselineCount });
+});
+
+// POST /api/items/fix-orphaned-baseline-dates { preview? } — finds
+// stock_baseline rows whose as_of_date doesn't match any stock_log entry for
+// the same item/count, but whose created_at is within a few seconds of a
+// stock_log entry's changed_at for the same item/count (i.e. the same
+// backend action wrote both records, just with an inconsistent date) --
+// this mismatch is what makes the item history view treat them as two
+// separate events (an unrecognized "bulk correction" row plus a synthetic
+// baseline row) instead of one. Sets the baseline's as_of_date to match the
+// stock_log entry's actual date. preview: true reports what would change
+// without writing anything.
+router.get('/orphaned-baseline-dates', (req, res) => {
+  res.json(findOrphanedBaselineDates());
+});
+router.post('/fix-orphaned-baseline-dates', (req, res) => {
+  const { preview } = req.body || {};
+  const fixes = findOrphanedBaselineDates();
+  if (!preview && fixes.length) {
+    const upd = db.prepare('UPDATE stock_baseline SET as_of_date = ? WHERE item_id = ? AND as_of_date = ? AND count = ? AND created_by = ? AND created_at = ?');
+    const tx = db.transaction(() => {
+      for (const f of fixes) upd.run(f.correctDate, f.itemId, f.oldDate, f.count, f.createdBy, f.createdAt);
+    });
+    tx();
+  }
+  res.json({ ok: true, preview: !!preview, fixed: fixes.length, fixes });
+});
+function findOrphanedBaselineDates() {
+  const baselines = db.prepare('SELECT item_id AS itemId, count, as_of_date AS asOfDate, created_by AS createdBy, created_at AS createdAt FROM stock_baseline').all();
+  const logs = db.prepare('SELECT item_id AS itemId, new_stock AS newStock, changed_at AS changedAt FROM stock_log').all();
+  const logsByItem = {};
+  for (const l of logs) (logsByItem[l.itemId] || (logsByItem[l.itemId] = [])).push(l);
+  const fixes = [];
+  for (const b of baselines) {
+    const candidates = logsByItem[b.itemId] || [];
+    // Already matches a log entry by date+count -- not orphaned, leave alone.
+    if (candidates.some(l => l.newStock === b.count && String(l.changedAt).slice(0, 10) === b.asOfDate)) continue;
+    // Same action, inconsistent date: same count, timestamps within 5s of each other, but a different date.
+    const match = candidates.find(l => {
+      if (l.newStock !== b.count) return false;
+      const dt = Math.abs(new Date(l.changedAt).getTime() - new Date(b.createdAt).getTime());
+      return dt < 5000 && String(l.changedAt).slice(0, 10) !== b.asOfDate;
+    });
+    if (match) {
+      fixes.push({ itemId: b.itemId, count: b.count, createdBy: b.createdBy, createdAt: b.createdAt, oldDate: b.asOfDate, correctDate: String(match.changedAt).slice(0, 10) });
+    }
+  }
+  return fixes;
+}
+
+
 // For recording a past change that wasn't logged (e.g. a PO received before
 // receipt-logging existed). Uses the item's current stock as new_stock; old_stock
 // = current - delta so the entry reads correctly. Body: { delta, reason, changedBy }.
