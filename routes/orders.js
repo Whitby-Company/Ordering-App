@@ -6,6 +6,24 @@ const { buildAutoPoBase } = require('../poNumber');
 
 const router = express.Router();
 
+// Marks each of these items as present in this customer's catalog (inserting
+// a fresh row, or flipping present back to 1 on an existing one -- e.g. one
+// that was explicitly turned off). Called whenever an order is actually
+// submitted/edited with a line for an item the store hadn't ordered before:
+// placing a real order for it is itself the signal that this customer does
+// carry it, so it should show up for them going forward without someone
+// having to separately go add it in the Catalogs screen. Deliberately leaves
+// price/unit alone on an existing row -- this only ever turns catalog
+// presence on, never touches pricing.
+function addToCustomerCatalog(customerId, itemIds) {
+  if (!itemIds.length) return;
+  const upsert = db.prepare(
+    `INSERT INTO customer_catalog (customer_id, item_id, present) VALUES (?, ?, 1)
+     ON CONFLICT(customer_id, item_id) DO UPDATE SET present = 1 WHERE present != 1`
+  );
+  for (const itemId of itemIds) upsert.run(customerId, itemId);
+}
+
 // GET /api/orders — list all orders, newest first, with line items nested
 router.get('/', (req, res) => {
   const orders = db
@@ -356,6 +374,9 @@ router.post('/', (req, res) => {
     for (const { item, qty, requestedQty, unit, pack, price } of resolvedLines) {
       insertLine.run(orderId, item.id, qty, requestedQty, price, unit, pack);
     }
+    // A pending draft isn't a real committed sale yet, so it shouldn't add
+    // anything to the customer's catalog -- only an actually-submitted order.
+    if (!isPending) addToCustomerCatalog(customerId, resolvedLines.map(l => l.item.id));
     return orderId;
   });
 
@@ -508,6 +529,9 @@ router.patch('/:id', (req, res) => {
     deleteLines.run(orderId);
     for (const { item, qty, requestedQty, unit, pack, price } of resolvedLines) insertLine.run(orderId, item.id, qty, requestedQty, price, unit, pack);
     updateOrder.run(customerId, deliveryDate, cleanNotes, new Date().toISOString(), nonInventoryVal, orderId);
+    // Same reasoning as order creation: a pending draft being edited still
+    // isn't a real committed sale, so it shouldn't touch the catalog either.
+    if (!isPending) addToCustomerCatalog(customerId, resolvedLines.map(l => l.item.id));
   });
   run();
   // Stock is computed; sync cached on-hand for all items touched (old + new lines).
