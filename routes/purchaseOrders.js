@@ -179,6 +179,7 @@ router.post('/:id/receive', (req, res) => {
   const who = (req.body && req.body.receivedBy) ? String(req.body.receivedBy) : null;
   const poRef = po.reference || po.id;
   const touched = [];
+  const takenByItem = {};
   let received = 0;
   const tx = db.transaction(() => {
     for (const r of receipts) {
@@ -191,13 +192,36 @@ router.post('/:id/receive', (req, res) => {
       if (take <= 0) continue;
       setRecv.run(take, receivedDate, line.id);
       touched.push(r.itemId);
+      takenByItem[r.itemId] = (takenByItem[r.itemId] || 0) + take;
       received += take;
     }
   });
   tx();
   // Stock is computed from baselines + dated movements (the received_date now
-  // counts toward on-hand). Sync the cached on-hand + log the receipt.
-  db.syncStock(touched);
+  // counts toward on-hand). A baselined item's computeStock() is idempotent
+  // (its baseline count is a fixed, real row, not the item's own current
+  // stock), so a fresh recompute is safe there -- and more accurate, since
+  // it also picks up anything else that changed for that item. Without a
+  // baseline, computeStock() falls back to treating the item's *current*
+  // stock as its own baseline, which makes a fresh recompute non-idempotent:
+  // calling it again adds this receipt's quantity on top of itself instead
+  // of just applying it once, and a further sync later (e.g. a bulk
+  // resync-stock, or another PO touching the same item) compounds it again
+  // each time. Apply the exact delta directly for those items instead,
+  // sidestepping the non-idempotence entirely.
+  const uniqueTouched = [...new Set(touched)];
+  const baselinedIds = new Set(
+    uniqueTouched.length
+      ? db.prepare(`SELECT DISTINCT item_id FROM stock_baseline WHERE item_id IN (${uniqueTouched.map(() => '?').join(',')})`).all(...uniqueTouched).map(r => r.item_id)
+      : []
+  );
+  const directUpd = db.prepare('UPDATE items SET stock = stock + ? WHERE id = ?');
+  const syncIds = [];
+  for (const itemId of uniqueTouched) {
+    if (baselinedIds.has(itemId)) syncIds.push(itemId);
+    else directUpd.run(takenByItem[itemId], itemId);
+  }
+  if (syncIds.length) db.syncStock(syncIds);
   const now = new Date().toISOString();
   for (const itemId of touched) {
     const cur = db.prepare('SELECT stock FROM items WHERE id = ?').get(itemId);

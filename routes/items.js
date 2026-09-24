@@ -526,6 +526,35 @@ router.delete('/stock-log/:logId', (req, res) => {
   res.json({ ok: true, reverted, newStock, isLatest });
 });
 
+// GET /api/items/no-baseline-audit — diagnostic: for every item with no
+// stock_baseline row at all, compares its current cached stock against what
+// a from-scratch recompute (sum of every dated PO receipt ever, minus every
+// dated order shipment with a delivery date on or before today) would
+// produce. A large mismatch is the signature of the double-counting bug
+// where a no-baseline item's computeStock() re-derives its cached stock as
+// its own "baseline" and adds the same dated receipts/shipments on top of
+// it again on every subsequent sync -- read-only, changes nothing.
+router.get('/no-baseline-audit', (req, res) => {
+  const today = db.todayHST();
+  const noBaselineItems = db.prepare(
+    `SELECT id, stock FROM items WHERE id NOT IN (SELECT DISTINCT item_id FROM stock_baseline)`
+  ).all();
+  const results = [];
+  for (const it of noBaselineItems) {
+    const receipts = db.prepare('SELECT COALESCE(SUM(qty_received),0) s FROM po_lines WHERE item_id = ? AND qty_received > 0 AND received_date IS NOT NULL').get(it.id).s;
+    const shipped = db.prepare(
+      `SELECT COALESCE(SUM(ol.qty),0) s FROM order_lines ol JOIN orders o ON o.id = ol.order_id
+        WHERE ol.item_id = ? AND o.status = 'submitted' AND o.non_inventory = 0 AND o.delivery_date <= ?`
+    ).get(it.id, today).s;
+    const fromScratch = receipts - shipped;
+    const diff = it.stock - fromScratch;
+    if (diff !== 0) {
+      results.push({ itemId: it.id, currentStock: it.stock, receipts, shipped, fromScratchValue: fromScratch, diff });
+    }
+  }
+  res.json({ totalNoBaselineItems: noBaselineItems.length, mismatchCount: results.length, mismatches: results });
+});
+
 // POST /api/items/fix-changed-by { from, to, preview? } — bulk-renames a
 // changedBy/createdBy value across stock_log and stock_baseline (e.g. a
 // device's stored name that had extra text baked into it, showing up on
