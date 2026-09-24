@@ -444,6 +444,24 @@ db.exec(`CREATE TABLE IF NOT EXISTS stock_baseline (
   created_at TEXT
 )`);
 db.exec('CREATE INDEX IF NOT EXISTS idx_stock_baseline_item ON stock_baseline(item_id, as_of_date)');
+// Every one of these backs a lookup or join that runs on a hot path (most
+// on every /items or /orders call): order_lines by item (computeStock's
+// per-item order-movement scan) and by order (the per-order line fetch in
+// GET /orders and everywhere else an order's lines are pulled), po_lines by
+// item (computeStock's receipts scan) and by PO (receiving, PO detail),
+// orders by customer and by delivery date (customer history, date-ranged
+// reports), and stock_log by item (the item history/ledger view). None of
+// these existed before -- at today's data volume a full table scan is fast
+// enough to be invisible, but every one of these tables only grows, and a
+// full scan on each becomes the actual bottleneck once they're 50-100x
+// bigger. Indexes are cheap to add and don't change any behavior.
+db.exec('CREATE INDEX IF NOT EXISTS idx_order_lines_item ON order_lines(item_id)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_order_lines_order ON order_lines(order_id)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_po_lines_item ON po_lines(item_id)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_po_lines_po ON po_lines(po_id)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer_id)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_orders_delivery_date ON orders(delivery_date)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_stock_log_item ON stock_log(item_id)');
 
 db.exec(`CREATE TABLE IF NOT EXISTS customer_catalog (
   customer_id INTEGER NOT NULL,
@@ -602,6 +620,17 @@ function computeStock(opts = {}) {
     `SELECT item_id AS itemId, qty_received AS qty, received_date AS rd
        FROM po_lines WHERE qty_received > 0`
   ).all();
+  // Grouped by item ONCE, up front -- so the per-item loop below is a plain
+  // lookup instead of scanning every order line (or PO receipt) in the
+  // company's entire history for every single item. At today's scale
+  // (hundreds of items and order lines) the difference isn't visible, but
+  // scanning the full list per item is O(items × orderLines): with a few
+  // years of order history that becomes tens of millions of iterations, on
+  // every /items call. Grouping first makes this O(items + orderLines).
+  const orderLinesByItem = {};
+  for (const l of orderLines) (orderLinesByItem[l.itemId] || (orderLinesByItem[l.itemId] = [])).push(l);
+  const receiptsByItem = {};
+  for (const r of receipts) (receiptsByItem[r.itemId] || (receiptsByItem[r.itemId] = [])).push(r);
 
   const result = {};
   for (const it of items) {
@@ -610,8 +639,7 @@ function computeStock(opts = {}) {
     const baseCount = base ? Number(base.count) : Number(it.stock) || 0;
     let shippedSinceBase = 0;   // delivered in [baseDate, today]
     let futureBoxes = 0;        // delivered > today
-    for (const l of orderLines) {
-      if (l.itemId !== it.id) continue;
+    for (const l of (orderLinesByItem[it.id] || [])) {
       const boxes = (Number(l.qty) || 0) * (l.unit === 'case' ? csById[it.id] : 1);
       const d = l.deliveryDate;
       if (!d) continue;
@@ -619,8 +647,7 @@ function computeStock(opts = {}) {
       else if (!baseDate || d >= baseDate) shippedSinceBase += boxes;
     }
     let receivedSinceBase = 0;
-    for (const r of receipts) {
-      if (r.itemId !== it.id) continue;
+    for (const r of (receiptsByItem[it.id] || [])) {
       const d = r.rd;
       if (!d) continue; // undated receipts don't affect the dated model
       if (d <= today && (!baseDate || d >= baseDate)) receivedSinceBase += Number(r.qty) || 0;
