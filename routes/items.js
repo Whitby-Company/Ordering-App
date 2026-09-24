@@ -579,16 +579,19 @@ function findOrphanedBaselineDates() {
   const fixes = [];
   for (const b of baselines) {
     const candidates = logsByItem[b.itemId] || [];
-    // Already matches a log entry by date+count -- not orphaned, leave alone.
-    if (candidates.some(l => l.newStock === b.count && String(l.changedAt).slice(0, 10) === b.asOfDate)) continue;
-    // Same action, inconsistent date: same count, timestamps within 5s of each other, but a different date.
+    // Already matches a log entry by date+count (comparing in HST, the same
+    // zone as_of_date is stored in — a raw UTC slice of changed_at can land
+    // on the wrong day for anything in the first 10 hours of a UTC day) --
+    // not orphaned, leave alone.
+    if (candidates.some(l => l.newStock === b.count && db.hstDateOf(l.changedAt) === b.asOfDate)) continue;
+    // Same action, inconsistent date: same count, timestamps within 5s of each other, but a different HST date.
     const match = candidates.find(l => {
       if (l.newStock !== b.count) return false;
       const dt = Math.abs(new Date(l.changedAt).getTime() - new Date(b.createdAt).getTime());
-      return dt < 5000 && String(l.changedAt).slice(0, 10) !== b.asOfDate;
+      return dt < 5000 && db.hstDateOf(l.changedAt) !== b.asOfDate;
     });
     if (match) {
-      fixes.push({ itemId: b.itemId, count: b.count, createdBy: b.createdBy, createdAt: b.createdAt, oldDate: b.asOfDate, correctDate: String(match.changedAt).slice(0, 10) });
+      fixes.push({ itemId: b.itemId, count: b.count, createdBy: b.createdBy, createdAt: b.createdAt, oldDate: b.asOfDate, correctDate: db.hstDateOf(match.changedAt) });
     }
   }
   return fixes;

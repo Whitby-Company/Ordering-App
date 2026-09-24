@@ -549,6 +549,18 @@ function todayHST() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Pacific/Honolulu', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 }
 module.exports.todayHST = todayHST;
+// Like todayHST, but for an arbitrary timestamp instead of "now" -- the
+// Hawaii-time calendar date a UTC timestamp falls on. Needed wherever a raw
+// UTC timestamp (e.g. a stock_log's changed_at) needs to be compared against
+// a date already stored in HST (e.g. a stock_baseline's as_of_date):
+// naively slicing the ISO string's date portion gives the wrong day for
+// anything in the first 10 hours of a UTC day, which is still the previous
+// day in Hawaii.
+function hstDateOf(isoTimestamp) {
+  if (!isoTimestamp) return '';
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Pacific/Honolulu', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(isoTimestamp));
+}
+module.exports.hstDateOf = hstDateOf;
 
 // Compute on-hand and available stock for items from the latest physical-count
 // baseline plus dated movements:
