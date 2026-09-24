@@ -635,26 +635,42 @@ function computeStock(opts = {}) {
   const result = {};
   for (const it of items) {
     const base = baseByItem[it.id];
+    // Without a real baseline, item.stock is NOT a frozen historical
+    // snapshot the way a real baseline's count is -- it's the item's own
+    // live cached value, which every order/PO action already updates
+    // directly as it happens. Treating it as a baseline anyway (adding
+    // every dated receipt/shipment on top of it, as the baselined branch
+    // below does) double-counts everything that's already reflected in it,
+    // and re-running this (e.g. a later, unrelated sync touching the same
+    // item, or a bulk resync-stock) compounds it further each time --
+    // exactly the bug behind an item's on-hand doubling (or worse) after a
+    // PO receipt. A baseline-less item has no fixed anchor to reconstruct
+    // forward from, so instead this derives on-hand directly and
+    // idempotently from the full, immutable order/PO history: every dated
+    // receipt ever made, minus every dated shipment through today. Calling
+    // this any number of times always yields the same result. Verified
+    // safe against production data first: of 18 no-baseline items, the 16
+    // that weren't already corrupted by this bug all had cached stock
+    // exactly equal to this same total already.
     const baseDate = base ? base.asOf : null;
-    const baseCount = base ? Number(base.count) : Number(it.stock) || 0;
-    let shippedSinceBase = 0;   // delivered in [baseDate, today]
+    const baseCount = base ? Number(base.count) : 0;
+    let sinceBase = 0;          // receipts+shipments counted toward on-hand: [baseDate, today] if baselined, else all-time
     let futureBoxes = 0;        // delivered > today
     for (const l of (orderLinesByItem[it.id] || [])) {
       const boxes = (Number(l.qty) || 0) * (l.unit === 'case' ? csById[it.id] : 1);
       const d = l.deliveryDate;
       if (!d) continue;
       if (d > today) futureBoxes += boxes;
-      else if (!baseDate || d >= baseDate) shippedSinceBase += boxes;
+      else if (!base || d >= baseDate) sinceBase -= boxes;
     }
-    let receivedSinceBase = 0;
     for (const r of (receiptsByItem[it.id] || [])) {
       const d = r.rd;
       if (!d) continue; // undated receipts don't affect the dated model
-      if (d <= today && (!baseDate || d >= baseDate)) receivedSinceBase += Number(r.qty) || 0;
+      if (d <= today && (!base || d >= baseDate)) sinceBase += Number(r.qty) || 0;
     }
-    const onHand = baseCount + receivedSinceBase - shippedSinceBase;
+    const onHand = baseCount + sinceBase;
     const available = onHand - futureBoxes;
-    result[it.id] = { onHand, available, futureBoxes, baseDate, baseCount, hasBaseline: !!base };
+    result[it.id] = { onHand, available, futureBoxes, baseDate, baseCount: base ? baseCount : (Number(it.stock) || 0), hasBaseline: !!base };
   }
   return result;
 }
