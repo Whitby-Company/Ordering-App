@@ -428,6 +428,41 @@ db.exec(`CREATE TABLE IF NOT EXISTS price_checks (
 db.exec('CREATE INDEX IF NOT EXISTS idx_price_checks_item ON price_checks(item_id)');
 db.exec('CREATE INDEX IF NOT EXISTS idx_price_checks_item_customer ON price_checks(item_id, customer_id)');
 
+// Stock holds: set aside stock for an ad, a promo, or anything else coming up,
+// without it being a sale. A hold reduces AVAILABLE only -- the boxes are
+// still physically in the warehouse, so on-hand is untouched, exactly like a
+// future-dated order. Deliberately NOT modelled as an order: orders carry
+// invoice numbers, QuickBooks export, printing and every sales report, none of
+// which should ever see a hold.
+//   status: 'active'    -- holding stock now
+//           'released'  -- manually let go, no longer holds
+//           'converted' -- turned into a real order (converted_order_id says which)
+// end_date is optional; once it passes the hold stops holding stock on its own
+// (evaluated by date at read time, so no scheduled job has to run).
+db.exec(`CREATE TABLE IF NOT EXISTS holds (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  customer_id INTEGER,
+  end_date TEXT,
+  notes TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
+  converted_order_id INTEGER,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  released_at TEXT
+)`);
+db.exec('CREATE INDEX IF NOT EXISTS idx_holds_status ON holds(status)');
+
+db.exec(`CREATE TABLE IF NOT EXISTS hold_lines (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  hold_id INTEGER NOT NULL,
+  item_id TEXT NOT NULL,
+  qty INTEGER NOT NULL DEFAULT 0,
+  unit TEXT NOT NULL DEFAULT 'box'
+)`);
+db.exec('CREATE INDEX IF NOT EXISTS idx_hold_lines_hold ON hold_lines(hold_id)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_hold_lines_item ON hold_lines(item_id)');
+
 // Taiyo warehouse page's "Taiyo Out" tab: a simple log of uploaded signed
 // proof-of-delivery / invoice documents. Not linked to a specific order row
 // -- reference is whatever the uploader types (invoice #, customer, etc.) to
@@ -683,6 +718,21 @@ function computeStock(opts = {}) {
   const receiptsByItem = {};
   for (const r of receipts) (receiptsByItem[r.itemId] || (receiptsByItem[r.itemId] = [])).push(r);
 
+  // Active holds set stock aside without selling it: they reduce AVAILABLE
+  // only, never on-hand. A hold whose end_date has passed stops holding on
+  // its own -- checked here by date rather than needing a job to expire it.
+  const holdLines = db.prepare(
+    `SELECT hl.item_id AS itemId, hl.qty, hl.unit
+       FROM hold_lines hl JOIN holds h ON h.id = hl.hold_id
+      WHERE h.status = 'active' AND (h.end_date IS NULL OR h.end_date >= ?)`
+  ).all(today);
+  const heldByItem = {};
+  for (const l of holdLines) {
+    const cs = csById[l.itemId] || 1;
+    const boxes = (Number(l.qty) || 0) * (l.unit === 'case' ? cs : 1);
+    heldByItem[l.itemId] = (heldByItem[l.itemId] || 0) + boxes;
+  }
+
   const result = {};
   for (const it of items) {
     const base = baseByItem[it.id];
@@ -720,8 +770,9 @@ function computeStock(opts = {}) {
       if (d <= today && (!base || d >= baseDate)) sinceBase += Number(r.qty) || 0;
     }
     const onHand = baseCount + sinceBase;
-    const available = onHand - futureBoxes;
-    result[it.id] = { onHand, available, futureBoxes, baseDate, baseCount: base ? baseCount : (Number(it.stock) || 0), hasBaseline: !!base };
+    const heldBoxes = heldByItem[it.id] || 0;
+    const available = onHand - futureBoxes - heldBoxes;
+    result[it.id] = { onHand, available, futureBoxes, heldBoxes, baseDate, baseCount: base ? baseCount : (Number(it.stock) || 0), hasBaseline: !!base };
   }
   return result;
 }

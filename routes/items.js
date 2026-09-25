@@ -35,8 +35,9 @@ router.get('/', (req, res) => {
     if (it.contains) { try { contains = JSON.parse(it.contains) || []; } catch { contains = []; } }
     const c = computed[it.id];
     // The main `stock` number the app uses everywhere (mobile, plain column,
-    // order entry, warnings) is AVAILABLE (on-hand − future orders) = what's
-    // left to sell. onHand and available are also exposed for the Today's view.
+    // order entry, warnings) is AVAILABLE (on-hand − future orders − active
+    // holds) = what's left to sell. onHand, available and heldBoxes are also
+    // exposed for the Today's view.
     const onHand = c ? c.onHand : it.stock;
     const available = c ? c.available : it.stock;
     return {
@@ -45,6 +46,7 @@ router.get('/', (req, res) => {
       onHand,
       available,
       futureBoxes: c ? c.futureBoxes : 0,
+      heldBoxes: c ? c.heldBoxes : 0,
       hasBaseline: c ? c.hasBaseline : false,
     };
   });
