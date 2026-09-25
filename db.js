@@ -478,6 +478,47 @@ db.exec(`CREATE TABLE IF NOT EXISTS customer_catalog (
   if (!cc.includes('unit')) db.exec("ALTER TABLE customer_catalog ADD COLUMN unit TEXT");
 }
 
+// Promos / scan allowances: tracked separately from item pricing (an order's
+// actual price is never touched by this) -- for now this is purely an
+// organized record of what deals exist, for who, and when, so staff have one
+// place to see and search them. A promo covers one or more items, and either
+// every customer or a hand-picked list chosen for that specific promo (scope
+// varies deal to deal, so it's not a fixed rule -- each promo decides).
+db.exec(`CREATE TABLE IF NOT EXISTS promos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  amount_type TEXT NOT NULL,        -- 'flat_per_box' | 'percent'
+  amount REAL NOT NULL,
+  start_date TEXT NOT NULL,
+  end_date TEXT NOT NULL,
+  applies_to_all_customers INTEGER NOT NULL DEFAULT 0,
+  notes TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL
+)`);
+db.exec('CREATE INDEX IF NOT EXISTS idx_promos_dates ON promos(start_date, end_date)');
+
+// Which items a promo covers. Indexed both directions: promo_id (via the
+// primary key's leading column) for "what's in this promo", and item_id (via
+// the explicit index) for "which promos cover this item" -- the same
+// both-directions need as the order/PO indexes added earlier, and just as
+// cheap to add now as it was to have been missing then.
+db.exec(`CREATE TABLE IF NOT EXISTS promo_items (
+  promo_id INTEGER NOT NULL,
+  item_id TEXT NOT NULL,
+  PRIMARY KEY (promo_id, item_id)
+)`);
+db.exec('CREATE INDEX IF NOT EXISTS idx_promo_items_item ON promo_items(item_id)');
+
+// Which customers a promo covers, when it's not flagged applies_to_all_customers.
+// Same both-directions indexing reasoning as promo_items above.
+db.exec(`CREATE TABLE IF NOT EXISTS promo_customers (
+  promo_id INTEGER NOT NULL,
+  customer_id INTEGER NOT NULL,
+  PRIMARY KEY (promo_id, customer_id)
+)`);
+db.exec('CREATE INDEX IF NOT EXISTS idx_promo_customers_customer ON promo_customers(customer_id)');
+
 // One-time catalog rollout: mark all currently-active items as default, and
 // turn the catalog on for all currently-active customers (so existing field
 // customers keep seeing the full set). New items/customers stay off default /
