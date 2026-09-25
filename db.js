@@ -542,6 +542,15 @@ db.exec(`CREATE TABLE IF NOT EXISTS promos (
   created_at TEXT NOT NULL
 )`);
 db.exec('CREATE INDEX IF NOT EXISTS idx_promos_dates ON promos(start_date, end_date)');
+// ad_retail: the shelf price actually being advertised for this promo. Kept
+// separate from the scan amount because it's a decision, not a calculation --
+// a store commonly advertises a round number that doesn't come out to exactly
+// regular retail minus the scan, so the two are worth comparing rather than
+// deriving one from the other.
+{
+  const pc = db.prepare('PRAGMA table_info(promos)').all().map(c => c.name);
+  if (!pc.includes('ad_retail')) db.exec('ALTER TABLE promos ADD COLUMN ad_retail REAL');
+}
 
 // Which items a promo covers. Indexed both directions: promo_id (via the
 // primary key's leading column) for "what's in this promo", and item_id (via
