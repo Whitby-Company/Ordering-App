@@ -417,6 +417,16 @@ db.exec(`CREATE TABLE IF NOT EXISTS price_checks (
   checked_by TEXT,
   checked_at TEXT NOT NULL
 )`);
+// customer_id links a check to one of OUR accounts, so its shelf prices can be
+// looked up per store later (e.g. the retail a promo will actually run at).
+// Stays NULL for competitor stores we don't service, which are identified by
+// the free-text retail_location only -- both kinds live in this one table.
+{
+  const pcCols = db.prepare('PRAGMA table_info(price_checks)').all().map(c => c.name);
+  if (!pcCols.includes('customer_id')) db.exec('ALTER TABLE price_checks ADD COLUMN customer_id INTEGER');
+}
+db.exec('CREATE INDEX IF NOT EXISTS idx_price_checks_item ON price_checks(item_id)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_price_checks_item_customer ON price_checks(item_id, customer_id)');
 
 // Taiyo warehouse page's "Taiyo Out" tab: a simple log of uploaded signed
 // proof-of-delivery / invoice documents. Not linked to a specific order row

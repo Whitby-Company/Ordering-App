@@ -11,10 +11,13 @@ const db = require('../db');
 router.get('/', (req, res) => {
   const { itemId, location, q } = req.query;
   let sql = `SELECT pc.id, pc.item_id AS itemId, i.name AS itemName, i.brand,
-                    pc.retail_location AS retailLocation, pc.base_price AS basePrice,
+                    pc.retail_location AS retailLocation, pc.customer_id AS customerId,
+                    c.name AS customerName, pc.base_price AS basePrice,
                     pc.promo_price AS promoPrice, pc.photo_url AS photoUrl, pc.notes,
                     pc.checked_by AS checkedBy, pc.checked_at AS checkedAt
-               FROM price_checks pc LEFT JOIN items i ON i.id = pc.item_id
+               FROM price_checks pc
+               LEFT JOIN items i ON i.id = pc.item_id
+               LEFT JOIN customers c ON c.id = pc.customer_id
               WHERE 1=1`;
   const params = [];
   if (itemId) { sql += ' AND pc.item_id = ?'; params.push(itemId); }
@@ -28,6 +31,45 @@ router.get('/', (req, res) => {
   res.json(db.prepare(sql).all(...params));
 });
 
+// GET /api/price-checks/latest-retail — the most recent shelf prices we know
+// of, one row per item+store, for items we actually service (customer_id set).
+// This is what turns an accumulating pile of field checks into a usable retail
+// record: callers ask "what does this item ring up at for this store" without
+// pulling every check ever logged.
+//   ?itemIds=a,b   limit to these items
+//   ?customerIds=1,2  limit to these stores
+router.get('/latest-retail', (req, res) => {
+  const itemIds = (req.query.itemIds || '').split(',').map(s => s.trim()).filter(Boolean);
+  const customerIds = (req.query.customerIds || '').split(',').map(s => Number(s)).filter(n => !isNaN(n) && n > 0);
+  const clauses = ['pc.customer_id IS NOT NULL'];
+  const params = [];
+  if (itemIds.length) {
+    clauses.push(`pc.item_id IN (${itemIds.map(() => '?').join(',')})`);
+    params.push(...itemIds);
+  }
+  if (customerIds.length) {
+    clauses.push(`pc.customer_id IN (${customerIds.map(() => '?').join(',')})`);
+    params.push(...customerIds);
+  }
+  // One row per item+store: the newest check wins. Ties on checked_at break by
+  // id so the result is stable rather than arbitrary.
+  const rows = db.prepare(
+    `SELECT pc.item_id AS itemId, pc.customer_id AS customerId, c.name AS customerName,
+            pc.base_price AS basePrice, pc.promo_price AS promoPrice,
+            pc.photo_url AS photoUrl, pc.checked_at AS checkedAt, pc.checked_by AS checkedBy
+       FROM price_checks pc
+       LEFT JOIN customers c ON c.id = pc.customer_id
+      WHERE ${clauses.join(' AND ')}
+        AND pc.id = (
+          SELECT p2.id FROM price_checks p2
+           WHERE p2.item_id = pc.item_id AND p2.customer_id = pc.customer_id
+           ORDER BY p2.checked_at DESC, p2.id DESC LIMIT 1
+        )
+      ORDER BY pc.item_id, c.name`
+  ).all(...params);
+  res.json(rows);
+});
+
 // GET /api/price-checks/locations — distinct retail location names seen so
 // far, most-recently-used first, for autocomplete convenience.
 router.get('/locations', (req, res) => {
@@ -39,20 +81,35 @@ router.get('/locations', (req, res) => {
 });
 
 // POST /api/price-checks — log a new price check.
-// body: { itemId, retailLocation, basePrice, promoPrice, notes, checkedBy }
+// body: { itemId, retailLocation, customerId, basePrice, promoPrice, notes, checkedBy }
+// customerId is set when the check is at one of our own accounts (so its shelf
+// prices can be looked up per store later); left out for competitor stores,
+// which are identified by retailLocation alone.
 router.post('/', (req, res) => {
-  const { itemId, retailLocation, basePrice, promoPrice, notes, checkedBy } = req.body || {};
+  const { itemId, retailLocation, customerId, basePrice, promoPrice, notes, checkedBy } = req.body || {};
   if (!itemId) return res.status(400).json({ error: 'itemId is required' });
-  if (!retailLocation || !retailLocation.trim()) return res.status(400).json({ error: 'retailLocation is required' });
   const item = db.prepare('SELECT id FROM items WHERE id = ?').get(itemId);
   if (!item) return res.status(404).json({ error: 'Item not found' });
 
+  // A check is located either by one of our customers or by a typed name.
+  let custId = null;
+  let locationName = (retailLocation || '').trim();
+  if (customerId != null && customerId !== '') {
+    const cust = db.prepare('SELECT id, name FROM customers WHERE id = ?').get(Number(customerId));
+    if (!cust) return res.status(404).json({ error: 'Customer not found' });
+    custId = cust.id;
+    // Keep retail_location populated with the store's name too, so existing
+    // views and the location autocomplete keep working unchanged.
+    if (!locationName) locationName = cust.name;
+  }
+  if (!locationName) return res.status(400).json({ error: 'Pick a store or enter a retail location' });
+
   const now = new Date().toISOString();
   const info = db.prepare(
-    `INSERT INTO price_checks (item_id, retail_location, base_price, promo_price, notes, checked_by, checked_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO price_checks (item_id, retail_location, customer_id, base_price, promo_price, notes, checked_by, checked_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
-    itemId, retailLocation.trim(),
+    itemId, locationName, custId,
     basePrice === '' || basePrice == null ? null : Number(basePrice),
     promoPrice === '' || promoPrice == null ? null : Number(promoPrice),
     notes ? String(notes).trim() : null,
