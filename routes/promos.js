@@ -14,7 +14,7 @@ function loadPromoExtras(promoIds) {
   if (!promoIds.length) return { itemsByPromo: {}, customersByPromo: {} };
   const placeholders = promoIds.map(() => '?').join(',');
   const itemRows = db.prepare(
-    `SELECT pi.promo_id AS promoId, i.id AS itemId, i.name AS itemName, i.brand AS brand
+    `SELECT pi.promo_id AS promoId, i.id AS itemId, i.name AS itemName, i.brand AS brand, i.price AS price
        FROM promo_items pi JOIN items i ON i.id = pi.item_id
       WHERE pi.promo_id IN (${placeholders})`
   ).all(...promoIds);
@@ -24,7 +24,7 @@ function loadPromoExtras(promoIds) {
       WHERE pc.promo_id IN (${placeholders})`
   ).all(...promoIds);
   const itemsByPromo = {}, customersByPromo = {};
-  for (const r of itemRows) (itemsByPromo[r.promoId] || (itemsByPromo[r.promoId] = [])).push({ id: r.itemId, name: r.itemName, brand: r.brand });
+  for (const r of itemRows) (itemsByPromo[r.promoId] || (itemsByPromo[r.promoId] = [])).push({ id: r.itemId, name: r.itemName, brand: r.brand, price: r.price });
   for (const r of custRows) (customersByPromo[r.promoId] || (customersByPromo[r.promoId] = [])).push({ id: r.customerId, name: r.customerName });
   return { itemsByPromo, customersByPromo };
 }
@@ -84,7 +84,7 @@ router.post('/', (req, res) => {
   const { name, itemIds, appliesToAllCustomers, customerIds, amountType, amount, startDate, endDate, notes, createdBy } = req.body || {};
   if (!name || !String(name).trim()) return res.status(400).json({ error: 'A promo needs a name.' });
   if (!Array.isArray(itemIds) || itemIds.length === 0) return res.status(400).json({ error: 'Pick at least one item.' });
-  if (amountType !== 'flat_per_box' && amountType !== 'percent') return res.status(400).json({ error: 'amountType must be flat_per_box or percent.' });
+  if (!['flat_per_box', 'flat_per_each', 'percent'].includes(amountType)) return res.status(400).json({ error: 'amountType must be flat_per_box, flat_per_each, or percent.' });
   if (amount == null || isNaN(Number(amount))) return res.status(400).json({ error: 'Enter a valid amount.' });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate || '') || !/^\d{4}-\d{2}-\d{2}$/.test(endDate || '')) return res.status(400).json({ error: 'Start and end date are required.' });
   if (endDate < startDate) return res.status(400).json({ error: 'End date is before the start date.' });
@@ -123,7 +123,7 @@ router.patch('/:id', (req, res) => {
   const { name, itemIds, appliesToAllCustomers, customerIds, amountType, amount, startDate, endDate, notes } = req.body || {};
   if (!name || !String(name).trim()) return res.status(400).json({ error: 'A promo needs a name.' });
   if (!Array.isArray(itemIds) || itemIds.length === 0) return res.status(400).json({ error: 'Pick at least one item.' });
-  if (amountType !== 'flat_per_box' && amountType !== 'percent') return res.status(400).json({ error: 'amountType must be flat_per_box or percent.' });
+  if (!['flat_per_box', 'flat_per_each', 'percent'].includes(amountType)) return res.status(400).json({ error: 'amountType must be flat_per_box, flat_per_each, or percent.' });
   if (amount == null || isNaN(Number(amount))) return res.status(400).json({ error: 'Enter a valid amount.' });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate || '') || !/^\d{4}-\d{2}-\d{2}$/.test(endDate || '')) return res.status(400).json({ error: 'Start and end date are required.' });
   if (endDate < startDate) return res.status(400).json({ error: 'End date is before the start date.' });
