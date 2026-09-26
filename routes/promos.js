@@ -3,6 +3,10 @@ const db = require('../db');
 
 const router = express.Router();
 
+// The three kinds of deal. An unrecognised value falls back to TPR rather than
+// being rejected, so an older client that doesn't send one still works.
+const PROMO_TYPES = ['EDLP', 'TPR', 'AD'];
+
 // Tracking-only for now: a promo never touches how an order is priced. It's
 // just an organized record of what deals exist, which item(s) and
 // customer(s) they cover, and when -- so staff have one searchable place to
@@ -63,7 +67,7 @@ router.get('/', (req, res) => {
   }
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
   const promos = db.prepare(
-    `SELECT id, name, amount_type AS amountType, amount, ad_retail AS adRetail,
+    `SELECT id, name, promo_type AS promoType, amount_type AS amountType, amount, ad_retail AS adRetail,
             start_date AS startDate, end_date AS endDate,
             applies_to_all_customers AS appliesToAllCustomers, notes, created_by AS createdBy, created_at AS createdAt
        FROM promos p ${where} ORDER BY created_at DESC`
@@ -82,7 +86,7 @@ router.get('/', (req, res) => {
 // customerIds: [...] (ignored if appliesToAllCustomers), amountType, amount,
 // startDate, endDate, notes, createdBy }
 router.post('/', (req, res) => {
-  const { name, itemIds, appliesToAllCustomers, customerIds, amountType, amount, adRetail, startDate, endDate, notes, createdBy } = req.body || {};
+  const { name, promoType, itemIds, appliesToAllCustomers, customerIds, amountType, amount, adRetail, startDate, endDate, notes, createdBy } = req.body || {};
   if (!name || !String(name).trim()) return res.status(400).json({ error: 'A promo needs a name.' });
   if (!Array.isArray(itemIds) || itemIds.length === 0) return res.status(400).json({ error: 'Pick at least one item.' });
   if (!['flat_per_box', 'flat_per_each', 'percent'].includes(amountType)) return res.status(400).json({ error: 'amountType must be flat_per_box, flat_per_each, or percent.' });
@@ -95,15 +99,15 @@ router.post('/', (req, res) => {
   }
 
   const insertPromo = db.prepare(
-    `INSERT INTO promos (name, amount_type, amount, ad_retail, start_date, end_date, applies_to_all_customers, notes, created_by, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO promos (name, promo_type, amount_type, amount, ad_retail, start_date, end_date, applies_to_all_customers, notes, created_by, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const insertItem = db.prepare('INSERT OR IGNORE INTO promo_items (promo_id, item_id) VALUES (?, ?)');
   const insertCust = db.prepare('INSERT OR IGNORE INTO promo_customers (promo_id, customer_id) VALUES (?, ?)');
 
   const promoId = db.transaction(() => {
     const info = insertPromo.run(
-      String(name).trim(), amountType, Number(amount),
+      String(name).trim(), PROMO_TYPES.includes(promoType) ? promoType : 'TPR', amountType, Number(amount),
       adRetail === '' || adRetail == null || isNaN(Number(adRetail)) ? null : Number(adRetail),
       startDate, endDate,
       allCust ? 1 : 0, notes ? String(notes) : null, createdBy || null, new Date().toISOString()
@@ -123,7 +127,7 @@ router.patch('/:id', (req, res) => {
   const existing = db.prepare('SELECT id FROM promos WHERE id = ?').get(id);
   if (!existing) return res.status(404).json({ error: 'Promo not found.' });
 
-  const { name, itemIds, appliesToAllCustomers, customerIds, amountType, amount, adRetail, startDate, endDate, notes } = req.body || {};
+  const { name, promoType, itemIds, appliesToAllCustomers, customerIds, amountType, amount, adRetail, startDate, endDate, notes } = req.body || {};
   if (!name || !String(name).trim()) return res.status(400).json({ error: 'A promo needs a name.' });
   if (!Array.isArray(itemIds) || itemIds.length === 0) return res.status(400).json({ error: 'Pick at least one item.' });
   if (!['flat_per_box', 'flat_per_each', 'percent'].includes(amountType)) return res.status(400).json({ error: 'amountType must be flat_per_box, flat_per_each, or percent.' });
@@ -136,7 +140,7 @@ router.patch('/:id', (req, res) => {
   }
 
   const updatePromo = db.prepare(
-    `UPDATE promos SET name = ?, amount_type = ?, amount = ?, ad_retail = ?, start_date = ?, end_date = ?,
+    `UPDATE promos SET name = ?, promo_type = ?, amount_type = ?, amount = ?, ad_retail = ?, start_date = ?, end_date = ?,
             applies_to_all_customers = ?, notes = ? WHERE id = ?`
   );
   const deleteItems = db.prepare('DELETE FROM promo_items WHERE promo_id = ?');
@@ -145,7 +149,7 @@ router.patch('/:id', (req, res) => {
   const insertCust = db.prepare('INSERT OR IGNORE INTO promo_customers (promo_id, customer_id) VALUES (?, ?)');
 
   db.transaction(() => {
-    updatePromo.run(String(name).trim(), amountType, Number(amount),
+    updatePromo.run(String(name).trim(), PROMO_TYPES.includes(promoType) ? promoType : 'TPR', amountType, Number(amount),
       adRetail === '' || adRetail == null || isNaN(Number(adRetail)) ? null : Number(adRetail),
       startDate, endDate, allCust ? 1 : 0, notes ? String(notes) : null, id);
     deleteItems.run(id);

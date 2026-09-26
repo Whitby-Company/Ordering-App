@@ -550,6 +550,11 @@ db.exec('CREATE INDEX IF NOT EXISTS idx_promos_dates ON promos(start_date, end_d
 {
   const pc = db.prepare('PRAGMA table_info(promos)').all().map(c => c.name);
   if (!pc.includes('ad_retail')) db.exec('ALTER TABLE promos ADD COLUMN ad_retail REAL');
+  // promo_type: EDLP | TPR | AD -- the three kinds of deal these are, which the
+  // retailers' own forms distinguish too (the Times sheet has separate EDLP and
+  // AD PROMO tabs; the Longs sheet has an AD/TPR field). Existing rows default
+  // to TPR, the everyday case.
+  if (!pc.includes('promo_type')) db.exec("ALTER TABLE promos ADD COLUMN promo_type TEXT NOT NULL DEFAULT 'TPR'");
 }
 
 // Which items a promo covers. Indexed both directions: promo_id (via the
